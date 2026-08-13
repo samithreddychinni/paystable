@@ -29,6 +29,8 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.Handle("GET /api/v1/admin/transactions/{id}", g(http.HandlerFunc(h.transactionDetail)))
 	mux.Handle("GET /api/v1/admin/mismatches", g(http.HandlerFunc(h.mismatches)))
 	mux.Handle("GET /api/v1/admin/mismatches/stats", g(http.HandlerFunc(h.mismatchStats)))
+	mux.Handle("GET /api/v1/admin/reviews", g(http.HandlerFunc(h.reviews)))
+	mux.Handle("POST /api/v1/admin/reviews/{id}", g(http.HandlerFunc(h.resolveReview)))
 	mux.Handle("GET /api/v1/admin/deliveries", g(http.HandlerFunc(h.deliveries)))
 	mux.Handle("GET /api/v1/admin/deliveries/stats", g(http.HandlerFunc(h.deliveryStats)))
 	mux.Handle("POST /api/v1/admin/deliveries/{id}/replay", g(http.HandlerFunc(h.replayDelivery)))

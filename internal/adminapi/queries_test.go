@@ -47,6 +47,7 @@ func seedHoldForAdmin(t *testing.T, db *sql.DB, status string, amount int64) str
 	t.Cleanup(func() {
 		db.Exec("DELETE FROM outbox WHERE txn_id=$1", txnID)             //nolint:errcheck
 		db.Exec("DELETE FROM ledger WHERE txn_id=$1", txnID)             //nolint:errcheck
+		db.Exec("DELETE FROM manual_reviews WHERE txn_id=$1", txnID)     //nolint:errcheck
 		db.Exec("DELETE FROM verification_polls WHERE txn_id=$1", txnID) //nolint:errcheck
 		db.Exec("DELETE FROM holds WHERE txn_id=$1", txnID)              //nolint:errcheck
 	})
