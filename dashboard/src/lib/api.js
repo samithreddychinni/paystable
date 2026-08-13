@@ -66,6 +66,8 @@ export const api = {
   // Mismatches
   getMismatches:        (p)     => get('/mismatches', p),
   getMismatchStats:     ()      => get('/mismatches/stats'),
+  getReviews:           ()      => get('/reviews'),
+  resolveReview:        (id, p) => post(`/reviews/${id}`, p),
 
   // Delivery
   getDeliveries:        (p)     => get('/deliveries', p),

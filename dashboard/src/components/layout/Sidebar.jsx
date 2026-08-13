@@ -6,7 +6,7 @@ const navItems = [
   { to: '/overview',     label: 'Overview',      icon: LayoutDashboard },
   { to: '/health',       label: 'Health',        icon: Activity },
   { to: '/transactions', label: 'Transactions',  icon: ArrowLeftRight },
-  { to: '/mismatches',   label: 'Mismatches',    icon: Zap },
+  { to: '/mismatches',   label: 'Review queue',  icon: Zap },
   { to: '/config',       label: 'Config',        icon: Settings },
 ]
 

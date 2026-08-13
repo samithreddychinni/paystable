@@ -49,6 +49,8 @@ For review states, Paystable includes additional context:
 }
 ```
 
+When an operator resolves a review as `confirmed` or `failed`, Paystable sends the same final event shape with `"reason":"manual_review"` and `"resolution_source":"manual_review"`. A `no_action` decision is recorded in the audit ledger and does not send a callback. Repeating the same review request is accepted without queuing another delivery.
+
 | Field | Type | Notes |
 |---|---|---|
 | `txn_id` | string | Merchant-supplied hold ID. |
@@ -62,6 +64,7 @@ For review states, Paystable includes additional context:
 | `reason` | string | Present for failure/review cases when Paystable has a reason. |
 | `gateway_amount` | int64 | Present for amount review cases. |
 | `hold_amount` | int64 | Present for amount review cases. |
+| `resolution_source` | string | `manual_review` when an operator produced the final outcome. |
 
 ## Signature Verification
 
