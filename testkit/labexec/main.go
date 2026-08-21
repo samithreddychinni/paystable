@@ -15,11 +15,12 @@ import (
 )
 
 type artifact struct {
-	Version       int                   `json:"version"`
-	Schedule      verification.Schedule `json:"schedule"`
-	Deterministic bool                  `json:"deterministic"`
-	Executions    int                   `json:"executions"`
-	Result        verification.Result   `json:"result"`
+	Version       int                           `json:"version"`
+	Schedule      verification.Schedule         `json:"schedule"`
+	Deterministic bool                          `json:"deterministic"`
+	Executions    int                           `json:"executions"`
+	Result        verification.Result           `json:"result"`
+	Reduction     *verification.ReductionReport `json:"reduction,omitempty"`
 }
 
 type executor struct {
@@ -28,8 +29,8 @@ type executor struct {
 }
 
 func main() {
-	if len(os.Args) != 3 {
-		fmt.Fprintln(os.Stderr, "usage: labexec SCHEDULE.json ARTIFACT.json")
+	if len(os.Args) != 3 && len(os.Args) != 4 {
+		fmt.Fprintln(os.Stderr, "usage: labexec SCHEDULE.json ARTIFACT.json [INVARIANT]")
 		os.Exit(2)
 	}
 	schedule, err := readSchedule(os.Args[1])
@@ -40,6 +41,15 @@ func main() {
 	e := &executor{
 		baseURL: envOr("LAB_URL", "http://localhost:9093"),
 		http:    &http.Client{Timeout: 3 * time.Second},
+	}
+	var reduction *verification.ReductionReport
+	if len(os.Args) == 4 {
+		reduced, report, err := verification.Reduce(schedule, os.Args[3], e.run)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "reduce schedule:", err)
+			os.Exit(1)
+		}
+		schedule, reduction = reduced, &report
 	}
 	first, err := e.run(schedule)
 	if err != nil {
@@ -55,7 +65,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "replay result does not match the first execution")
 		os.Exit(1)
 	}
-	data, err := json.MarshalIndent(artifact{Version: 1, Schedule: schedule, Deterministic: true, Executions: 2, Result: first}, "", "  ")
+	data, err := json.MarshalIndent(artifact{Version: 1, Schedule: schedule, Deterministic: true, Executions: 2, Result: first, Reduction: reduction}, "", "  ")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "encode artifact:", err)
 		os.Exit(1)
@@ -72,6 +82,9 @@ func main() {
 }
 
 func (e *executor) run(schedule verification.Schedule) (verification.Result, error) {
+	if err := e.waitReady(); err != nil {
+		return verification.Result{}, err
+	}
 	if err := e.post("/reset", schedule, false); err != nil {
 		return verification.Result{}, err
 	}

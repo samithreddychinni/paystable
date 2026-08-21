@@ -49,7 +49,21 @@ The first version runs inside one process.
 The merchant stores events, payment state, effects, and traces in PostgreSQL.
 Docker restarts the merchant after each named crash or lost response.
 
-4. Stop the container laboratory:
+4. Reduce a failing schedule to a 1-minimal schedule:
+
+   ```bash
+   go run ./testkit/labexec \
+     testkit/lab/scenarios/stale-terminal-regression.json \
+     artifacts/lab/reduced-stale-terminal-regression.json \
+     INV-4
+   ```
+
+5. Compare `original_action_count` and `reduced_action_count` in the artifact.
+
+A 1-minimal schedule has no single action that you can remove while preserving
+the selected invariant violation. It is not necessarily the shortest schedule.
+
+6. Stop the container laboratory:
 
    ```bash
    docker compose -f docker-compose.lab.yml down

@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "schedule": {
+    "name": "fulfillment before durable deduplication",
+    "program": "fulfill-before-dedup",
+    "order_id": "order_demo_1",
+    "actions": [
+      {
+        "type": "deliver",
+        "event_id": "event_captured_1",
+        "status": "captured",
+        "crash_at": "after_fulfillment"
+      },
+      {
+        "type": "restart"
+      },
+      {
+        "type": "deliver",
+        "event_id": "event_captured_1",
+        "status": "captured"
+      }
+    ]
+  },
+  "deterministic": true,
+  "executions": 2,
+  "result": {
+    "scenario": "fulfillment before durable deduplication",
+    "program": "fulfill-before-dedup",
+    "final_state": "captured",
+    "effect_count": 2,
+    "violations": [
+      {
+        "invariant": "INV-2",
+        "detail": "order order_demo_1 produced 2 fulfillment effects"
+      }
+    ],
+    "trace": [
+      {
+        "sequence": 1,
+        "action": "fulfill",
+        "detail": "fulfillment occurred before durable event storage",
+        "state": "",
+        "effect_count": 1
+      },
+      {
+        "sequence": 2,
+        "action": "crash",
+        "detail": "merchant crashed after fulfillment",
+        "state": "",
+        "effect_count": 1
+      },
+      {
+        "sequence": 3,
+        "action": "restart",
+        "detail": "merchant process started",
+        "state": "",
+        "effect_count": 1
+      },
+      {
+        "sequence": 4,
+        "action": "fulfill",
+        "detail": "fulfillment occurred before durable event storage",
+        "state": "",
+        "effect_count": 2
+      },
+      {
+        "sequence": 5,
+        "action": "checkpoint",
+        "detail": "event stored at after_deduplication",
+        "state": "",
+        "effect_count": 2
+      },
+      {
+        "sequence": 6,
+        "action": "deliver",
+        "detail": "payment state updated",
+        "state": "captured",
+        "effect_count": 2
+      }
+    ]
+  },
+  "reduction": {
+    "invariant": "INV-2",
+    "original_action_count": 3,
+    "reduced_action_count": 3,
+    "candidate_executions": 3,
+    "removed_actions": []
+  }
+}
