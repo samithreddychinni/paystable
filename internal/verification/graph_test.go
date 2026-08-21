@@ -6,48 +6,22 @@ import (
 )
 
 func TestBehaviorGraphIsDeterministicAndContainsRequiredPaths(t *testing.T) {
-	tests := []struct {
-		program string
-		path    []Action
-	}{
-		{ProgramFulfillBeforeDedup, []Action{
-			{Type: "deliver", EventID: "event_captured", Status: "captured", CrashAt: "after_fulfillment"},
-			{Type: "restart"},
-			{Type: "deliver", EventID: "event_captured", Status: "captured"},
-		}},
-		{ProgramNewKeyOnRetry, []Action{
-			{Type: "deliver", EventID: "event_captured", Status: "captured"},
-			{Type: "fulfill", Response: "lost"},
-			{Type: "fulfill", Response: "ok"},
-		}},
-		{ProgramTerminalRegression, []Action{
-			{Type: "deliver", EventID: "event_captured", Status: "captured"},
-			{Type: "fulfill", Response: "ok"},
-			{Type: "deliver", EventID: "event_stale", Status: "failed"},
-		}},
-		{ProgramCorrect, []Action{
-			{Type: "deliver", EventID: "event_captured", Status: "captured"},
-			{Type: "fulfill", Response: "lost"},
-			{Type: "fulfill", Response: "ok"},
-			{Type: "deliver", EventID: "event_stale", Status: "failed"},
-		}},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.program, func(t *testing.T) {
-			first, err := CompileBehaviorGraph(tt.program, 4)
+	corpus := GenerateProgramCorpus()
+	for _, program := range corpus.Programs {
+		t.Run(program.Program, func(t *testing.T) {
+			first, err := CompileBehaviorGraph(program.Program, corpus.MaxScheduleActions)
 			if err != nil {
 				t.Fatal(err)
 			}
-			second, err := CompileBehaviorGraph(tt.program, 4)
+			second, err := CompileBehaviorGraph(program.Program, corpus.MaxScheduleActions)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if !reflect.DeepEqual(first, second) {
 				t.Fatal("graph compilation is not deterministic")
 			}
-			if !graphContainsPath(first, tt.path) {
-				t.Fatalf("graph does not contain required path: %#v", tt.path)
+			if !graphContainsPath(first, program.GroundTruth.Actions) {
+				t.Fatalf("graph does not contain ground truth: %#v", program.GroundTruth.Actions)
 			}
 			for _, edge := range first.Edges {
 				if edge.From < 0 || edge.From >= len(first.Nodes) || edge.To < 0 || edge.To >= len(first.Nodes) {

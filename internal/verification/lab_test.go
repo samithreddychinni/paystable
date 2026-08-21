@@ -5,78 +5,46 @@ import (
 	"testing"
 )
 
-func TestRequiredBugSchedulesReplayDeterministically(t *testing.T) {
-	tests := []struct {
-		name      string
-		program   string
-		actions   []Action
-		invariant string
-	}{
-		{
-			name: "fulfillment before dedup", program: ProgramFulfillBeforeDedup,
-			actions: []Action{
-				{Type: "deliver", EventID: "event_1", Status: "captured", CrashAt: "after_fulfillment"},
-				{Type: "restart"},
-				{Type: "deliver", EventID: "event_1", Status: "captured"},
-			},
-			invariant: InvariantFulfillmentAtMostOnce,
-		},
-		{
-			name: "new retry key", program: ProgramNewKeyOnRetry,
-			actions: []Action{
-				{Type: "deliver", EventID: "event_1", Status: "captured"},
-				{Type: "fulfill", Response: "lost"},
-				{Type: "fulfill", Response: "ok"},
-			},
-			invariant: InvariantFulfillmentAtMostOnce,
-		},
-		{
-			name: "terminal state regression", program: ProgramTerminalRegression,
-			actions: []Action{
-				{Type: "deliver", EventID: "event_1", Status: "captured"},
-				{Type: "fulfill", Response: "ok"},
-				{Type: "deliver", EventID: "event_0", Status: "failed"},
-			},
-			invariant: InvariantTerminalStateStable,
-		},
+func TestProgramCorpusGroundTruthReplaysDeterministically(t *testing.T) {
+	corpus := GenerateProgramCorpus()
+	if len(corpus.Programs) != 4 {
+		t.Fatalf("corpus has %d programs, want 4", len(corpus.Programs))
 	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			schedule := Schedule{Name: test.name, Program: test.program, OrderID: "order_1", Actions: test.actions}
-			first, err := Run(schedule)
+	for _, program := range corpus.Programs {
+		t.Run(program.Program, func(t *testing.T) {
+			if len(program.GroundTruth.Actions) > corpus.MaxScheduleActions {
+				t.Fatalf("ground truth has %d actions, limit is %d", len(program.GroundTruth.Actions), corpus.MaxScheduleActions)
+			}
+			first, err := Run(program.GroundTruth)
 			if err != nil {
 				t.Fatal(err)
 			}
-			second, err := Run(schedule)
+			second, err := Run(program.GroundTruth)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if !reflect.DeepEqual(first, second) {
 				t.Fatal("replay changed the result")
 			}
-			if len(first.Violations) != 1 || first.Violations[0].Invariant != test.invariant {
-				t.Fatalf("violations = %#v, want %s", first.Violations, test.invariant)
+			if first.FinalState != program.ExpectedFinalState || first.EffectCount != program.ExpectedEffectCount {
+				t.Fatalf("result state=%q effects=%d, want state=%q effects=%d", first.FinalState, first.EffectCount, program.ExpectedFinalState, program.ExpectedEffectCount)
+			}
+			if program.ExpectedInvariant == "" {
+				if len(first.Violations) != 0 {
+					t.Fatalf("correct program violations = %#v", first.Violations)
+				}
+			} else if len(first.Violations) != 1 || first.Violations[0].Invariant != program.ExpectedInvariant {
+				t.Fatalf("violations = %#v, want %s", first.Violations, program.ExpectedInvariant)
+			}
+			if program.ExpectedInvariant != "" {
+				reduced, _, err := Reduce(program.GroundTruth, program.ExpectedInvariant, Run)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(reduced.Actions) != len(program.GroundTruth.Actions) {
+					t.Fatalf("ground truth reduces from %d to %d actions", len(program.GroundTruth.Actions), len(reduced.Actions))
+				}
 			}
 		})
-	}
-}
-
-func TestCorrectProgramHasNoFinding(t *testing.T) {
-	schedule := Schedule{
-		Name: "correct merchant", Program: ProgramCorrect, OrderID: "order_1",
-		Actions: []Action{
-			{Type: "deliver", EventID: "event_1", Status: "captured"},
-			{Type: "fulfill", Response: "lost"},
-			{Type: "fulfill", Response: "ok"},
-			{Type: "deliver", EventID: "event_0", Status: "failed"},
-		},
-	}
-	result, err := Run(schedule)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(result.Violations) != 0 || result.EffectCount != 1 || result.FinalState != "captured" {
-		t.Fatalf("correct result = %#v", result)
 	}
 }

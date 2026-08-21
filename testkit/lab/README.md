@@ -29,6 +29,17 @@ The graph contains only legal actions. Each edge increases the schedule depth
 by one. Matching payment behavior uses one node at each depth.
 The maximum schedule length is eight actions.
 
+## Generate the program corpus
+
+Generate the executable programs and their ground-truth schedules:
+
+```bash
+go run ./testkit/lab corpus
+```
+
+Each program includes its family, expected final state, effect count, and
+expected invariant violation. The correct program has no expected violation.
+
 ## Included schedules
 
 | File | Expected invariant |

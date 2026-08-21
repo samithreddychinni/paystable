@@ -11,6 +11,10 @@ import (
 )
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "corpus" {
+		writeJSON(verification.GenerateProgramCorpus())
+		return
+	}
 	if len(os.Args) == 4 && os.Args[1] == "graph" {
 		maxActions, err := strconv.Atoi(os.Args[3])
 		if err != nil {
@@ -26,7 +30,7 @@ func main() {
 		return
 	}
 	if len(os.Args) != 2 {
-		fmt.Fprintln(os.Stderr, "usage: lab SCHEDULE.json\n       lab graph PROGRAM MAX_ACTIONS")
+		fmt.Fprintln(os.Stderr, "usage: lab SCHEDULE.json\n       lab corpus\n       lab graph PROGRAM MAX_ACTIONS")
 		os.Exit(2)
 	}
 	file, err := os.Open(os.Args[1])
