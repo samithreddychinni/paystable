@@ -40,6 +40,18 @@ go run ./testkit/lab corpus
 Each program includes its family, expected final state, effect count, and
 expected invariant violation. The correct program has no expected violation.
 
+## Measure the search baselines
+
+Run all non-model baselines with the same budget and seed:
+
+```bash
+go run ./testkit/lab baselines 50 7
+```
+
+The report includes success, replay, false-finding, and redundant-schedule
+measures. Search executions exclude deterministic replay checks. The coverage
+baseline keeps shorter schedules first and favors unseen graph states.
+
 ## Included schedules
 
 | File | Expected invariant |

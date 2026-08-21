@@ -50,7 +50,7 @@ type Result struct {
 	Trace       []TraceEntry `json:"trace"`
 }
 
-// ponytail: The first lab runs in one process. Bind these actions to containers when process crash fidelity matters.
+// The in-process lab provides fast deterministic checks. Use the container lab when a test requires process crashes.
 type runner struct {
 	schedule      Schedule
 	running       bool
