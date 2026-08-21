@@ -1,0 +1,226 @@
+package verification
+
+import (
+	"encoding/json"
+	"fmt"
+	"slices"
+)
+
+const ScoutMethod = "scout"
+
+var scoutFeatureNames = []string{
+	"action_count",
+	"deliver_count",
+	"fulfill_count",
+	"restart_count",
+	"captured_count",
+	"failed_count",
+	"crash_count",
+	"lost_response_count",
+	"duplicate_event_count",
+	"deliver_after_restart",
+	"fulfill_after_lost_response",
+	"failed_after_captured",
+	"same_event_after_restart",
+}
+
+type ScoutModel struct {
+	Version       int       `json:"version"`
+	FeatureNames  []string  `json:"feature_names"`
+	Weights       []float64 `json:"weights"`
+	Epochs        int       `json:"epochs"`
+	LearningRate  float64   `json:"learning_rate"`
+	TrainingPairs int       `json:"training_pairs"`
+}
+
+type ScoutReport struct {
+	Version         int             `json:"version"`
+	Evaluation      string          `json:"evaluation"`
+	Budget          int             `json:"budget"`
+	ModelBytes      int             `json:"model_bytes"`
+	Model           ScoutModel      `json:"model"`
+	EvaluationFolds []ScoutFold     `json:"evaluation_folds"`
+	Runs            []BaselineRun   `json:"runs"`
+	Summary         BaselineSummary `json:"summary"`
+}
+
+type ScoutFold struct {
+	HeldOutFamily string     `json:"held_out_family"`
+	Model         ScoutModel `json:"model"`
+}
+
+// TrainScout fits a linear pairwise ranker to deterministic invariant results.
+func TrainScout(corpus ProgramCorpus) (ScoutModel, error) {
+	return trainScout(corpus, "")
+}
+
+func trainScout(corpus ProgramCorpus, excludedFamily string) (ScoutModel, error) {
+	model := ScoutModel{
+		Version: 1, FeatureNames: slices.Clone(scoutFeatureNames),
+		Weights: make([]float64, len(scoutFeatureNames)), Epochs: 40, LearningRate: 0.01,
+	}
+	type pair struct{ positive, negative []float64 }
+	var pairs []pair
+	for _, program := range corpus.Programs {
+		if program.ExpectedInvariant == "" || program.Family == excludedFamily {
+			continue
+		}
+		graph, err := CompileBehaviorGraph(program.Program, corpus.MaxScheduleActions)
+		if err != nil {
+			return ScoutModel{}, err
+		}
+		var positives, negatives [][]float64
+		for i, candidate := range graphCandidates(graph) {
+			schedule := Schedule{
+				Name: "Scout training candidate", Program: program.Program,
+				OrderID: fmt.Sprintf("order_scout_training_%d", i+1), Actions: candidate.actions,
+			}
+			result, err := Run(schedule)
+			if err != nil {
+				return ScoutModel{}, err
+			}
+			features := scoutFeatures(candidate.actions)
+			if resultHasInvariant(result, program.ExpectedInvariant) {
+				positives = append(positives, features)
+			} else {
+				negatives = append(negatives, features)
+			}
+		}
+		for _, positive := range positives {
+			for _, negative := range negatives {
+				pairs = append(pairs, pair{positive: positive, negative: negative})
+			}
+		}
+	}
+	if len(pairs) == 0 {
+		return ScoutModel{}, fmt.Errorf("training corpus has no ranking pairs")
+	}
+	model.TrainingPairs = len(pairs)
+	for range model.Epochs {
+		for _, pair := range pairs {
+			if scoutScore(model.Weights, pair.positive)-scoutScore(model.Weights, pair.negative) >= 1 {
+				continue
+			}
+			for i := range model.Weights {
+				model.Weights[i] += model.LearningRate * (pair.positive[i] - pair.negative[i])
+			}
+		}
+	}
+	return model, nil
+}
+
+// RunScoutReport trains Scout and evaluates it with the baseline execution budget.
+func RunScoutReport(corpus ProgramCorpus, budget int) (ScoutReport, error) {
+	if budget < 50 || budget > 1000 {
+		return ScoutReport{}, fmt.Errorf("budget must be between 50 and 1000")
+	}
+	model, err := TrainScout(corpus)
+	if err != nil {
+		return ScoutReport{}, err
+	}
+	report := ScoutReport{Version: 1, Evaluation: "leave-one-family-out", Budget: budget, Model: model}
+	modelJSON, err := json.Marshal(model)
+	if err != nil {
+		return ScoutReport{}, err
+	}
+	report.ModelBytes = len(modelJSON)
+	for _, program := range corpus.Programs {
+		rankingModel := model
+		if program.ExpectedInvariant != "" {
+			rankingModel, err = trainScout(corpus, program.Family)
+			if err != nil {
+				return ScoutReport{}, err
+			}
+			report.EvaluationFolds = append(report.EvaluationFolds, ScoutFold{HeldOutFamily: program.Family, Model: rankingModel})
+		}
+		graph, err := CompileBehaviorGraph(program.Program, corpus.MaxScheduleActions)
+		if err != nil {
+			return ScoutReport{}, err
+		}
+		candidates := graphCandidates(graph)
+		slices.SortStableFunc(candidates, func(a, b searchCandidate) int {
+			return -compareFloat(rankingModel.score(a.actions), rankingModel.score(b.actions))
+		})
+		run, err := evaluateCandidates(ScoutMethod, program, candidates, budget)
+		if err != nil {
+			return ScoutReport{}, err
+		}
+		report.Runs = append(report.Runs, run)
+	}
+	report.Summary = summarizeBaseline(ScoutMethod, corpus, report.Runs)
+	return report, nil
+}
+
+func (m ScoutModel) score(actions []Action) float64 {
+	return scoutScore(m.Weights, scoutFeatures(actions))
+}
+
+func scoutScore(weights, features []float64) float64 {
+	var score float64
+	for i := range weights {
+		score += weights[i] * features[i]
+	}
+	return score
+}
+
+func compareFloat(a, b float64) int {
+	switch {
+	case a < b:
+		return -1
+	case a > b:
+		return 1
+	default:
+		return 0
+	}
+}
+
+func scoutFeatures(actions []Action) []float64 {
+	features := make([]float64, len(scoutFeatureNames))
+	features[0] = float64(len(actions))
+	seenEvents := make(map[string]bool)
+	capturedSeen := false
+	for i, action := range actions {
+		switch action.Type {
+		case "deliver":
+			features[1]++
+			if seenEvents[action.EventID] {
+				features[8]++
+			}
+			seenEvents[action.EventID] = true
+			if action.Status == "captured" {
+				features[4]++
+				capturedSeen = true
+			}
+			if action.Status == "failed" {
+				features[5]++
+				if capturedSeen {
+					features[11] = 1
+				}
+			}
+			if action.CrashAt != "" {
+				features[6]++
+			}
+		case "fulfill":
+			features[2]++
+			if action.Response == "lost" {
+				features[7]++
+			}
+		case "restart":
+			features[3]++
+		}
+		if i == 0 {
+			continue
+		}
+		previous := actions[i-1]
+		if previous.Type == "restart" && action.Type == "deliver" {
+			features[9] = 1
+			if i > 1 && actions[i-2].EventID != "" && actions[i-2].EventID == action.EventID {
+				features[12] = 1
+			}
+		}
+		if previous.Type == "fulfill" && previous.Response == "lost" && action.Type == "fulfill" {
+			features[10] = 1
+		}
+	}
+	return features
+}

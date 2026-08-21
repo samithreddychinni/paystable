@@ -11,6 +11,20 @@ import (
 )
 
 func main() {
+	if len(os.Args) == 3 && os.Args[1] == "scout" {
+		budget, err := strconv.Atoi(os.Args[2])
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "budget must be an integer")
+			os.Exit(2)
+		}
+		report, err := verification.RunScoutReport(verification.GenerateProgramCorpus(), budget)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "run Scout:", err)
+			os.Exit(1)
+		}
+		writeJSON(report)
+		return
+	}
 	if len(os.Args) == 4 && os.Args[1] == "baselines" {
 		budget, err := strconv.Atoi(os.Args[2])
 		if err != nil {
@@ -49,7 +63,7 @@ func main() {
 		return
 	}
 	if len(os.Args) != 2 {
-		fmt.Fprintln(os.Stderr, "usage: lab SCHEDULE.json\n       lab baselines BUDGET SEED\n       lab corpus\n       lab graph PROGRAM MAX_ACTIONS")
+		fmt.Fprintln(os.Stderr, "usage: lab SCHEDULE.json\n       lab baselines BUDGET SEED\n       lab corpus\n       lab graph PROGRAM MAX_ACTIONS\n       lab scout BUDGET")
 		os.Exit(2)
 	}
 	file, err := os.Open(os.Args[1])

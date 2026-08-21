@@ -88,7 +88,10 @@ func runBaseline(method string, program ProgramCase, maxActions, budget int, see
 	default:
 		return BaselineRun{}, fmt.Errorf("unsupported baseline %q", method)
 	}
+	return evaluateCandidates(method, program, candidates, budget)
+}
 
+func evaluateCandidates(method string, program ProgramCase, candidates []searchCandidate, budget int) (BaselineRun, error) {
 	run := BaselineRun{Method: method, Program: program.Program}
 	seenBehavior := make(map[string]bool)
 	for _, candidate := range candidates {

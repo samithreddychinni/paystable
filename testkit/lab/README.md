@@ -52,6 +52,19 @@ The report includes success, replay, false-finding, and redundant-schedule
 measures. Search executions exclude deterministic replay checks. The coverage
 baseline keeps shorter schedules first and favors unseen graph states.
 
+## Train and run Scout
+
+Train the linear Scout ranker and run it with the shared budget:
+
+```bash
+go run ./testkit/lab scout 50
+```
+
+The report includes the final model, evaluation fold models, search runs, and
+the same summary measures as the baselines. Each fold excludes its target
+family from training. Scout uses deterministic CPU training.
+The 13-weight model does not require a GPU.
+
 ## Included schedules
 
 | File | Expected invariant |
