@@ -1,0 +1,56 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: paystable
+      POSTGRES_PASSWORD: paystable
+      POSTGRES_DB: paystable
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "paystable"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  paystable:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgres://paystable:paystable@postgres:5432/paystable?sslmode=disable
+      GATEWAY: razorpay
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET}
+      RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET}
+      RAZORPAY_API_BASE_URL: https://api.razorpay.com/v1
+      MERCHANT_CALLBACK_SECRET: ${MERCHANT_CALLBACK_SECRET}
+      ADMIN_API_KEY: ${ADMIN_API_KEY}
+      DELIVERY_ALLOW_INSECURE_CALLBACK: "true"
+      PORT: 8080
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  merchant:
+    build:
+      context: .
+      dockerfile: testkit/razorpaymerchant/Dockerfile
+    environment:
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET}
+      RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET}
+      PAYSTABLE_URL: http://paystable:8080
+      ADMIN_API_KEY: ${ADMIN_API_KEY}
+      MERCHANT_CALLBACK_SECRET: ${MERCHANT_CALLBACK_SECRET}
+      MERCHANT_CALLBACK_URL: http://merchant:9092/callback
+      RAZORPAY_FIXTURE_PATH: /artifacts/razorpay-webhook.json
+      PORT: 9092
+    ports:
+      - "9092:9092"
+    volumes:
+      - ./artifacts:/artifacts
+    depends_on:
+      - paystable
