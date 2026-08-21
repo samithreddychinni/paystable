@@ -123,6 +123,25 @@ func TestLoad_RazorpayOptionals(t *testing.T) {
 	}
 }
 
+func TestLoad_RazorpayDoesNotRequirePayU(t *testing.T) {
+	clearAllEnvs(t)
+	t.Setenv("DATABASE_URL", "postgres://localhost:5432/paystable")
+	t.Setenv("GATEWAY", "razorpay")
+	t.Setenv("RAZORPAY_KEY_ID", "rzp_test_key")
+	t.Setenv("RAZORPAY_KEY_SECRET", "key_secret")
+	t.Setenv("RAZORPAY_WEBHOOK_SECRET", "webhook_secret")
+	t.Setenv("MERCHANT_CALLBACK_SECRET", "callback_secret")
+	t.Setenv("ADMIN_API_KEY", "admin_key")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Gateway != "razorpay" {
+		t.Fatalf("Gateway = %q, want razorpay", cfg.Gateway)
+	}
+}
+
 func TestLoad_InvalidIntFallsBackToDefault(t *testing.T) {
 	clearAllEnvs(t)
 	setRequiredEnvs(t)

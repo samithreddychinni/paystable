@@ -57,11 +57,20 @@ func Load() (*Config, error) {
 	required := map[string]*string{
 		"DATABASE_URL":             &c.DatabaseURL,
 		"GATEWAY":                  &c.Gateway,
-		"WEBHOOK_SECRET":           &c.WebhookSecret,
-		"GATEWAY_API_KEY":          &c.GatewayAPIKey,
-		"PAYU_STATUS_URL":          &c.PayuStatusURL,
 		"MERCHANT_CALLBACK_SECRET": &c.MerchantCallbackSecret,
 		"ADMIN_API_KEY":            &c.AdminAPIKey,
+	}
+	switch os.Getenv("GATEWAY") {
+	case "payu":
+		required["WEBHOOK_SECRET"] = &c.WebhookSecret
+		required["GATEWAY_API_KEY"] = &c.GatewayAPIKey
+		required["PAYU_STATUS_URL"] = &c.PayuStatusURL
+	case "razorpay":
+		required["RAZORPAY_KEY_ID"] = &c.RazorpayKeyID
+		required["RAZORPAY_KEY_SECRET"] = &c.RazorpayKeySecret
+		required["RAZORPAY_WEBHOOK_SECRET"] = &c.RazorpayWebhookSecret
+	default:
+		return nil, fmt.Errorf("unsupported GATEWAY %q", os.Getenv("GATEWAY"))
 	}
 
 	for key, ptr := range required {
