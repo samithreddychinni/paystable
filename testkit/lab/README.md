@@ -98,6 +98,23 @@ go run ./testkit/lab demo
 The command checks Razorpay signature handling, replay, reduction, search,
 runtime feedback, and repair. It does not call Razorpay or use real money.
 
+## Run the release checks
+
+Install the dashboard packages before the first check:
+
+```bash
+npm --prefix dashboard ci
+```
+
+Run all local release checks:
+
+```bash
+./scripts/release-check.sh
+```
+
+The script checks credentials, formatting, dependencies, Go code, deterministic
+output, Compose files, and the dashboard.
+
 ## Included schedules
 
 | File | Expected invariant |

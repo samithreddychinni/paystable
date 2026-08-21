@@ -7,12 +7,8 @@ import (
 	"strings"
 )
 
-//payu sends a reverse hash in webhook/callback responses
-//VerifyResponseHash verifies the reverse hash payu sends in webhook/callback responses
-//payu response hash calculation formula is:
-//   sha512( SALT | status | udf10 | udf9 | udf8 | udf7 | udf6 | udf5 | udf4 | udf3 | udf2 | udf1 | email | firstname | productinfo | amount | txnid | key )
-//formula with additional_charges:
-//   sha512( additional_charges | SALT | status | udf10 | udf9 | udf8 | udf7 | udf6 | udf5 | udf4 | udf3 | udf2 | udf1 | email | firstname | productinfo | amount | txnid | key )
+// VerifyResponseHash verifies the reverse hash in a PayU response.
+// PayU prefixes the hash input with additionalCharges when that field is present.
 func VerifyResponseHash(params map[string]string, salt string) bool {
 	receivedHash := params["hash"]
 	if receivedHash == "" {

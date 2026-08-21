@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// lagEstimator:webHook arrival->gateway API status reflection duration
+// LagEstimator records the delay between a webhook and the matching gateway status.
 type LagEstimator struct {
 	mu        sync.RWMutex
 	maxSample int
@@ -19,7 +19,7 @@ type defaults struct {
 	p50, p75, p90, p99 time.Duration
 }
 
-//1) NewLagEstimator is used to determine the timing for p50,p75,p90 and p99(eg:p50 means p50 = 12s it means 50% of past confirmed successes showed up within 12s of the webhook)
+// NewLagEstimator creates an estimator with safe polling defaults.
 func NewLagEstimator() *LagEstimator {
 	return &LagEstimator{
 		maxSample: 500,
@@ -34,7 +34,7 @@ func NewLagEstimator() *LagEstimator {
 	}
 }
 
-//2) used to keep latest records with respect to a given bounded size
+// Record stores a delay and keeps the most recent samples.
 func (e *LagEstimator) Record(gateway string, lag time.Duration) {
 	if lag < 0 {
 		lag = 0
@@ -44,20 +44,20 @@ func (e *LagEstimator) Record(gateway string, lag time.Duration) {
 
 	s := append(e.samples[gateway], lag)
 	if len(s) > e.maxSample {
-		s = s[len(s)-e.maxSample:]//to maintain once recent ones,if ir 502nd value,its updates in current 2nd value(bound 500)
+		s = s[len(s)-e.maxSample:]
 	}
 	e.samples[gateway] = s
 }
 
-//ScheduleFor returns the poll schedule for a gateway, using asymetric bounded polling
+// Schedule defines bounded polling times for a gateway.
 type Schedule struct {
 	CatchPolls []time.Duration
 	FailAfter  time.Duration
 }
 
-//3) ScheduleFor returns the poll schedule for a gateway, using asymetric bounded polling
+// ScheduleFor returns the polling schedule for a gateway.
 func (e *LagEstimator) ScheduleFor(gateway string) Schedule {
-	// 1.1 fix: copy inside RLock so concurrent Record() cannot race on the underlying array.
+	// Copy the samples while the read lock prevents concurrent changes.
 	e.mu.RLock()
 	s := make([]time.Duration, len(e.samples[gateway]))
 	copy(s, e.samples[gateway])
@@ -65,9 +65,8 @@ func (e *LagEstimator) ScheduleFor(gateway string) Schedule {
 
 	var p50, p75, p90, p99 time.Duration
 	if len(s) < e.minSample {
-		p50, p75, p90, p99 = e.prior.p50, e.prior.p75, e.prior.p90, e.prior.p99 //e.prior refers to default values
+		p50, p75, p90, p99 = e.prior.p50, e.prior.p75, e.prior.p90, e.prior.p99
 	} else {
-		// s is already a safe copy — sort it directly.
 		sort.Slice(s, func(i, j int) bool { return s[i] < s[j] })
 		p50 = quantile(s, 0.50)
 		p75 = quantile(s, 0.75)
@@ -81,8 +80,6 @@ func (e *LagEstimator) ScheduleFor(gateway string) Schedule {
 	}
 }
 
-
-//4) A quantile pX is the value such that X% of samples are ≤ that value(similar to ascending order n percentile/median concept).If p50 = 12s it means 50% of past confirmed successes showed up within 12s of the webhook.
 func quantile(sorted []time.Duration, q float64) time.Duration {
 	if len(sorted) == 0 {
 		return 0
@@ -91,10 +88,10 @@ func quantile(sorted []time.Duration, q float64) time.Duration {
 	if rank >= len(sorted) {
 		rank = len(sorted) - 1
 	}
-	return sorted[rank] //returns duration for given quantile 
+	return sorted[rank]
 }
 
-//5) SampleCount returns the number of samples recorded for a gateway.
+// SampleCount returns the sample count for a gateway.
 func (e *LagEstimator) SampleCount(gateway string) int {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
