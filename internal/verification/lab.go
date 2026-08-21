@@ -107,9 +107,7 @@ func Validate(schedule Schedule) error {
 	if schedule.Name == "" || schedule.OrderID == "" || len(schedule.Actions) == 0 {
 		return fmt.Errorf("name, order_id, and actions are required")
 	}
-	switch schedule.Program {
-	case ProgramCorrect, ProgramFulfillBeforeDedup, ProgramNewKeyOnRetry, ProgramTerminalRegression:
-	default:
+	if !supportedProgram(schedule.Program) {
 		return fmt.Errorf("unsupported program %q", schedule.Program)
 	}
 	for i, action := range schedule.Actions {
@@ -140,6 +138,14 @@ func Validate(schedule Schedule) error {
 		}
 	}
 	return nil
+}
+
+func supportedProgram(program string) bool {
+	switch program {
+	case ProgramCorrect, ProgramFulfillBeforeDedup, ProgramNewKeyOnRetry, ProgramTerminalRegression:
+		return true
+	}
+	return false
 }
 
 func (r *runner) run(action Action) error {

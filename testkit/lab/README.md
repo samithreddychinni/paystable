@@ -17,6 +17,18 @@ The invariant checks decide if the schedule found a bug.
 
 Run the same file again to verify deterministic replay.
 
+## Compile the payment-behavior graph
+
+Compile a program graph with a maximum schedule length:
+
+```bash
+go run ./testkit/lab graph correct 4
+```
+
+The graph contains only legal actions. Each edge increases the schedule depth
+by one. Matching payment behavior uses one node at each depth.
+The maximum schedule length is eight actions.
+
 ## Included schedules
 
 | File | Expected invariant |
