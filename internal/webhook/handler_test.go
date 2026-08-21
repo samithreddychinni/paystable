@@ -1,7 +1,14 @@
 package webhook
 
 import (
+	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
+	"net/http"
 	"testing"
+
+	"github.com/IDEA-Amrita/paystable/internal/config"
 )
 
 func TestParsePayload_JSON(t *testing.T) {
@@ -79,5 +86,40 @@ func TestParsePayload_FormWithSpecialChars(t *testing.T) {
 	}
 	if params["firstname"] != "John Doe" {
 		t.Errorf("firstname = %q, want 'John Doe'", params["firstname"])
+	}
+}
+
+func TestParseRazorpayPayload(t *testing.T) {
+	body := []byte(`{
+		"event":"payment.captured",
+		"payload":{"payment":{"entity":{"id":"pay_123","order_id":"order_123","status":"captured","amount":49900}}}
+	}`)
+
+	params, err := parseGatewayPayload("razorpay", body, "application/json; charset=utf-8")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if params["event"] != "payment.captured" || params["payment_id"] != "pay_123" || params["order_id"] != "order_123" || params["amount"] != "49900" {
+		t.Fatalf("unexpected normalized payload: %#v", params)
+	}
+	if extractTxnID("razorpay", params) != "order_123" || extractEventType("razorpay", params) != "payment.captured" {
+		t.Fatal("Razorpay identity or event type was not extracted")
+	}
+}
+
+func TestHandlerVerifiesRazorpayRawBody(t *testing.T) {
+	body := []byte(`{"event":"payment.captured"}`)
+	secret := "webhook-secret"
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write(body)
+	headers := make(http.Header)
+	headers.Set("X-Razorpay-Signature", hex.EncodeToString(mac.Sum(nil)))
+
+	h := NewHandler(nil, &config.Config{RazorpayWebhookSecret: secret})
+	if !h.verify(context.Background(), "razorpay", nil, body, headers) {
+		t.Fatal("valid Razorpay signature rejected")
+	}
+	if h.verify(context.Background(), "razorpay", nil, append(body, ' '), headers) {
+		t.Fatal("tampered Razorpay body accepted")
 	}
 }

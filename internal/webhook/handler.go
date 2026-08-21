@@ -4,16 +4,19 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/IDEA-Amrita/paystable/internal/config"
 	"github.com/IDEA-Amrita/paystable/internal/gateway/payu"
+	"github.com/IDEA-Amrita/paystable/internal/gateway/razorpay"
 	"github.com/IDEA-Amrita/paystable/internal/metrics"
 	"github.com/IDEA-Amrita/paystable/internal/secrets"
 )
@@ -40,16 +43,21 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	params, err := parsePayload(body, r.Header.Get("Content-Type"))
+	params, err := parseGatewayPayload(gateway, body, r.Header.Get("Content-Type"))
 	if err != nil {
 		h.quarantine(gateway, "malformed_payload", r, body)
 		w.WriteHeader(http.StatusOK)
 		return
 	}
 
-	if !h.verify(r.Context(), gateway, params) {
+	if !h.verify(r.Context(), gateway, params, body, r.Header) {
 		h.quarantine(gateway, "hmac_mismatch", r, body)
 		metrics.WebhookHMACFailures.Inc()
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	if gateway == "razorpay" && r.Header.Get("X-Razorpay-Event-Id") == "" {
+		h.quarantine(gateway, "missing_event_id", r, body)
 		w.WriteHeader(http.StatusOK)
 		return
 	}
@@ -66,7 +74,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := h.persist(gateway, params); err != nil {
+	if err := h.persist(gateway, params, body, r.Header.Get("X-Razorpay-Event-Id")); err != nil {
 		slog.Error("failed to persist webhook", "error", err, "gateway", gateway)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
@@ -75,16 +83,26 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func (h *Handler) verify(ctx context.Context, gateway string, params map[string]string) bool {
+func (h *Handler) verify(ctx context.Context, gateway string, params map[string]string, body []byte, headers http.Header) bool {
 	candidates := h.activeSecrets(ctx, gateway)
-	if len(candidates) == 0 && h.cfg.WebhookSecret != "" {
-		candidates = append(candidates, h.cfg.WebhookSecret)
-	}
 
 	switch gateway {
 	case "payu":
+		if len(candidates) == 0 && h.cfg.WebhookSecret != "" {
+			candidates = append(candidates, h.cfg.WebhookSecret)
+		}
 		for _, secret := range candidates {
 			if payu.VerifyResponseHash(params, secret) {
+				return true
+			}
+		}
+		return false
+	case "razorpay":
+		if len(candidates) == 0 && h.cfg.RazorpayWebhookSecret != "" {
+			candidates = append(candidates, h.cfg.RazorpayWebhookSecret)
+		}
+		for _, secret := range candidates {
+			if razorpay.VerifyWebhookSignature(body, headers.Get("X-Razorpay-Signature"), secret) {
 				return true
 			}
 		}
@@ -133,12 +151,17 @@ func (h *Handler) activeSecrets(ctx context.Context, gateway string) []string {
 	return out
 }
 
-func (h *Handler) persist(gateway string, params map[string]string) error {
+func (h *Handler) persist(gateway string, params map[string]string, body []byte, eventID string) error {
 	txnID := extractTxnID(gateway, params)
 	eventType := extractEventType(gateway, params)
-	gatewayEventID := params["mihpayid"]
+	if eventID == "" {
+		eventID = params["mihpayid"]
+	}
 
-	payload, _ := json.Marshal(params)
+	payload := body
+	if !json.Valid(payload) {
+		payload, _ = json.Marshal(params)
+	}
 
 	var insertedID int64
 	err := h.db.QueryRow(`
@@ -146,7 +169,7 @@ func (h *Handler) persist(gateway string, params map[string]string) error {
 		VALUES ($1, $2, NULLIF($3, ''), $4, $5::jsonb)
 		ON CONFLICT (gateway, gateway_event_id) DO NOTHING
 		RETURNING id`,
-		txnID, gateway, gatewayEventID, eventType, payload).Scan(&insertedID)
+		txnID, gateway, eventID, eventType, payload).Scan(&insertedID)
 
 	if err == sql.ErrNoRows {
 		slog.Info("duplicate webhook ignored", "gateway", gateway, "txn_id", txnID, "event", eventType)
@@ -185,6 +208,11 @@ func extractTxnID(gateway string, params map[string]string) string {
 	switch gateway {
 	case "payu":
 		return params["txnid"]
+	case "razorpay":
+		if params["order_id"] != "" {
+			return params["order_id"]
+		}
+		return params["payment_id"]
 	default:
 		return params["txnid"]
 	}
@@ -194,15 +222,65 @@ func extractEventType(gateway string, params map[string]string) string {
 	switch gateway {
 	case "payu":
 		return "payment." + params["status"]
+	case "razorpay":
+		return params["event"]
 	default:
 		return "unknown"
 	}
 }
 
+func parseGatewayPayload(gateway string, body []byte, contentType string) (map[string]string, error) {
+	if gateway == "razorpay" {
+		return parseRazorpayPayload(body)
+	}
+	return parsePayload(body, contentType)
+}
+
+func parseRazorpayPayload(body []byte) (map[string]string, error) {
+	var event struct {
+		Event   string `json:"event"`
+		Payload struct {
+			Payment struct {
+				Entity struct {
+					ID      string `json:"id"`
+					OrderID string `json:"order_id"`
+					Status  string `json:"status"`
+					Amount  int64  `json:"amount"`
+				} `json:"entity"`
+			} `json:"payment"`
+			Order struct {
+				Entity struct {
+					ID string `json:"id"`
+				} `json:"entity"`
+			} `json:"order"`
+		} `json:"payload"`
+	}
+	if err := json.Unmarshal(body, &event); err != nil {
+		return nil, err
+	}
+	if event.Event == "" {
+		return nil, fmt.Errorf("missing Razorpay event type")
+	}
+	orderID := event.Payload.Payment.Entity.OrderID
+	if orderID == "" {
+		orderID = event.Payload.Order.Entity.ID
+	}
+	if orderID == "" {
+		return nil, fmt.Errorf("missing Razorpay order id")
+	}
+	return map[string]string{
+		"event":      event.Event,
+		"payment_id": event.Payload.Payment.Entity.ID,
+		"order_id":   orderID,
+		"status":     event.Payload.Payment.Entity.Status,
+		"amount":     strconv.FormatInt(event.Payload.Payment.Entity.Amount, 10),
+	}, nil
+}
+
 func parsePayload(body []byte, contentType string) (map[string]string, error) {
 	params := make(map[string]string)
 
-	if contentType == "application/json" || (len(body) > 0 && body[0] == '{') {
+	if strings.HasPrefix(contentType, "application/json") || (len(body) > 0 && body[0] == '{') {
 		if err := json.Unmarshal(body, &params); err != nil {
 			return nil, err
 		}

@@ -14,6 +14,10 @@ type Config struct {
 	WebhookSecret          string
 	GatewayAPIKey          string
 	PayuStatusURL          string
+	RazorpayKeyID          string
+	RazorpayKeySecret      string
+	RazorpayWebhookSecret  string
+	RazorpayAPIBaseURL     string
 	MerchantCallbackSecret string
 	AdminAPIKey            string
 	SecretEncryptionKey    string
@@ -44,6 +48,10 @@ func Load() (*Config, error) {
 		DeliveryTimeoutS:      envIntOr("DELIVERY_TIMEOUT_S", 10),
 		DeliveryConcurrency:   envIntOr("DELIVERY_WORKER_CONCURRENCY", 20),
 		DeliveryAllowInsecure: os.Getenv("DELIVERY_ALLOW_INSECURE_CALLBACK") == "true",
+		RazorpayKeyID:         envOr("RAZORPAY_KEY_ID", ""),
+		RazorpayKeySecret:     envOr("RAZORPAY_KEY_SECRET", ""),
+		RazorpayWebhookSecret: envOr("RAZORPAY_WEBHOOK_SECRET", ""),
+		RazorpayAPIBaseURL:    envOr("RAZORPAY_API_BASE_URL", "https://api.razorpay.com/v1"),
 	}
 
 	required := map[string]*string{

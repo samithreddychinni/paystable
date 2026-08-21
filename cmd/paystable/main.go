@@ -18,6 +18,7 @@ import (
 	"github.com/IDEA-Amrita/paystable/internal/delivery"
 	"github.com/IDEA-Amrita/paystable/internal/gateway"
 	"github.com/IDEA-Amrita/paystable/internal/gateway/payu"
+	"github.com/IDEA-Amrita/paystable/internal/gateway/razorpay"
 	"github.com/IDEA-Amrita/paystable/internal/hold"
 	"github.com/IDEA-Amrita/paystable/internal/sse"
 	"github.com/IDEA-Amrita/paystable/internal/stabilizer"
@@ -60,9 +61,13 @@ func main() {
 
 	lag := stabilizer.NewLagEstimator()
 	payuClient := payu.NewClient(cfg.PayuStatusURL, cfg.GatewayAPIKey)
+	razorpayClient := razorpay.NewClient(cfg.RazorpayAPIBaseURL, cfg.RazorpayKeyID, cfg.RazorpayKeySecret)
 	gatewayFactory := func(g string) gateway.GatewayClient {
-		if g == "payu" {
+		switch g {
+		case "payu":
 			return payuClient
+		case "razorpay":
+			return razorpayClient
 		}
 		return nil
 	}

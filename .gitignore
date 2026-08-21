@@ -4,6 +4,7 @@
 # Environment
 .env
 .env.testkit
+/rzp-test-key.csv
 
 # IDE
 .idea/

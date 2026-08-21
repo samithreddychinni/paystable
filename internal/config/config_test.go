@@ -17,6 +17,7 @@ func clearAllEnvs(t *testing.T) {
 		"DATABASE_URL", "GATEWAY", "WEBHOOK_SECRET", "GATEWAY_API_KEY",
 		"PAYU_STATUS_URL", "MERCHANT_CALLBACK_SECRET", "ADMIN_API_KEY", "PORT",
 		"STABILIZATION_N", "MAX_BACKOFF_S", "HOLD_MAX_TTL_S", "LOG_LEVEL",
+		"RAZORPAY_KEY_ID", "RAZORPAY_KEY_SECRET", "RAZORPAY_WEBHOOK_SECRET", "RAZORPAY_API_BASE_URL",
 	} {
 		t.Setenv(env, "")
 	}
@@ -100,6 +101,25 @@ func TestLoad_CustomOptionals(t *testing.T) {
 	}
 	if cfg.LogLevel != "debug" {
 		t.Errorf("LogLevel = %q, want debug", cfg.LogLevel)
+	}
+}
+
+func TestLoad_RazorpayOptionals(t *testing.T) {
+	clearAllEnvs(t)
+	setRequiredEnvs(t)
+	t.Setenv("RAZORPAY_KEY_ID", "rzp_test_key")
+	t.Setenv("RAZORPAY_KEY_SECRET", "key_secret")
+	t.Setenv("RAZORPAY_WEBHOOK_SECRET", "webhook_secret")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.RazorpayKeyID != "rzp_test_key" || cfg.RazorpayKeySecret != "key_secret" || cfg.RazorpayWebhookSecret != "webhook_secret" {
+		t.Fatal("Razorpay credentials were not loaded")
+	}
+	if cfg.RazorpayAPIBaseURL != "https://api.razorpay.com/v1" {
+		t.Fatalf("RazorpayAPIBaseURL = %q", cfg.RazorpayAPIBaseURL)
 	}
 }
 
