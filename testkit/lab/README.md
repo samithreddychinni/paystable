@@ -87,6 +87,17 @@ go run ./testkit/lab repair
 The repair preserves `captured` after a stale failure. The command checks every
 legal schedule with four actions or fewer. It does not change merchant files.
 
+## Run the complete demonstration
+
+Run the deterministic verification story:
+
+```bash
+go run ./testkit/lab demo
+```
+
+The command checks Razorpay signature handling, replay, reduction, search,
+runtime feedback, and repair. It does not call Razorpay or use real money.
+
 ## Included schedules
 
 | File | Expected invariant |

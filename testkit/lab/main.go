@@ -11,6 +11,15 @@ import (
 )
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "demo" {
+		report, err := verification.RunDemo()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "run demo:", err)
+			os.Exit(1)
+		}
+		writeJSON(report)
+		return
+	}
 	if len(os.Args) == 2 && os.Args[1] == "repair" {
 		report, err := verification.VerifyTerminalStateRepair(verification.GenerateProgramCorpus())
 		if err != nil {
@@ -86,7 +95,7 @@ func main() {
 		return
 	}
 	if len(os.Args) != 2 {
-		fmt.Fprintln(os.Stderr, "usage: lab SCHEDULE.json\n       lab baselines BUDGET SEED\n       lab closed-loop BUDGET\n       lab corpus\n       lab graph PROGRAM MAX_ACTIONS\n       lab repair\n       lab scout BUDGET")
+		fmt.Fprintln(os.Stderr, "usage: lab SCHEDULE.json\n       lab baselines BUDGET SEED\n       lab closed-loop BUDGET\n       lab corpus\n       lab demo\n       lab graph PROGRAM MAX_ACTIONS\n       lab repair\n       lab scout BUDGET")
 		os.Exit(2)
 	}
 	file, err := os.Open(os.Args[1])
