@@ -76,6 +76,17 @@ go run ./testkit/lab closed-loop 50
 After each non-finding run, Scout records new trace states and updates its
 weights. The invariant checks remain the only finding authority.
 
+## Verify the constrained repair
+
+Verify the terminal-state repair after the Scout search gate passes:
+
+```bash
+go run ./testkit/lab repair
+```
+
+The repair preserves `captured` after a stale failure. The command checks every
+legal schedule with four actions or fewer. It does not change merchant files.
+
 ## Included schedules
 
 | File | Expected invariant |

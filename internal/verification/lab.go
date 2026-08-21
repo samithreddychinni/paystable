@@ -9,6 +9,7 @@ const (
 	ProgramFulfillBeforeDedup      = "fulfill-before-dedup"
 	ProgramNewKeyOnRetry           = "new-key-on-retry"
 	ProgramTerminalRegression      = "terminal-regression"
+	ProgramTerminalStable          = "terminal-stable"
 	InvariantFulfillmentAtMostOnce = "INV-2"
 	InvariantTerminalStateStable   = "INV-4"
 )
@@ -142,7 +143,7 @@ func Validate(schedule Schedule) error {
 
 func supportedProgram(program string) bool {
 	switch program {
-	case ProgramCorrect, ProgramFulfillBeforeDedup, ProgramNewKeyOnRetry, ProgramTerminalRegression:
+	case ProgramCorrect, ProgramFulfillBeforeDedup, ProgramNewKeyOnRetry, ProgramTerminalRegression, ProgramTerminalStable:
 		return true
 	}
 	return false
