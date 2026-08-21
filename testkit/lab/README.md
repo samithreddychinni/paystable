@@ -24,6 +24,33 @@ Run the same file again to verify deterministic replay.
 | `fulfillment-before-dedup.json` | `INV-2` |
 | `new-key-after-lost-response.json` | `INV-2` |
 | `stale-terminal-regression.json` | `INV-4` |
+| `correct.json` | none |
 
 The first version runs inside one process.
-The next version will bind these actions to container and PostgreSQL checkpoints.
+
+## Run against PostgreSQL and process crashes
+
+1. Start the container laboratory:
+
+   ```bash
+   docker compose -f docker-compose.lab.yml up --build -d
+   ```
+
+2. Run a schedule twice and save its replay artifact:
+
+   ```bash
+   go run ./testkit/labexec \
+     testkit/lab/scenarios/fulfillment-before-dedup.json \
+     artifacts/lab/fulfillment-before-dedup.json
+   ```
+
+3. Check that the artifact contains `"deterministic": true`.
+
+The merchant stores events, payment state, effects, and traces in PostgreSQL.
+Docker restarts the merchant after each named crash or lost response.
+
+4. Stop the container laboratory:
+
+   ```bash
+   docker compose -f docker-compose.lab.yml down
+   ```

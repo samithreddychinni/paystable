@@ -1,0 +1,28 @@
+name: paystable-lab
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: lab
+      POSTGRES_PASSWORD: lab
+      POSTGRES_DB: lab
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "lab"]
+      interval: 2s
+      timeout: 2s
+      retries: 10
+
+  merchant:
+    build:
+      context: .
+      dockerfile: testkit/labmerchant/Dockerfile
+    environment:
+      DATABASE_URL: postgres://lab:lab@postgres:5432/lab?sslmode=disable
+      PORT: 9093
+    ports:
+      - "9093:9093"
+    restart: on-failure
+    depends_on:
+      postgres:
+        condition: service_healthy

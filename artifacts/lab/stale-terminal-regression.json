@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "schedule": {
+    "name": "stale event changes a terminal state",
+    "program": "terminal-regression",
+    "order_id": "order_demo_3",
+    "actions": [
+      {
+        "type": "deliver",
+        "event_id": "event_captured_3",
+        "status": "captured"
+      },
+      {
+        "type": "fulfill",
+        "response": "ok"
+      },
+      {
+        "type": "deliver",
+        "event_id": "event_failed_earlier",
+        "status": "failed"
+      }
+    ]
+  },
+  "deterministic": true,
+  "executions": 2,
+  "result": {
+    "scenario": "stale event changes a terminal state",
+    "program": "terminal-regression",
+    "final_state": "failed",
+    "effect_count": 1,
+    "violations": [
+      {
+        "invariant": "INV-4",
+        "detail": "captured order order_demo_3 regressed to failed"
+      }
+    ],
+    "trace": [
+      {
+        "sequence": 1,
+        "action": "checkpoint",
+        "detail": "event stored at after_deduplication",
+        "state": "",
+        "effect_count": 0
+      },
+      {
+        "sequence": 2,
+        "action": "deliver",
+        "detail": "payment state updated",
+        "state": "captured",
+        "effect_count": 0
+      },
+      {
+        "sequence": 3,
+        "action": "fulfill",
+        "detail": "fulfillment sink accepted key order_demo_3",
+        "state": "captured",
+        "effect_count": 1
+      },
+      {
+        "sequence": 4,
+        "action": "checkpoint",
+        "detail": "event stored at after_deduplication",
+        "state": "captured",
+        "effect_count": 1
+      },
+      {
+        "sequence": 5,
+        "action": "deliver",
+        "detail": "payment state updated",
+        "state": "failed",
+        "effect_count": 1
+      }
+    ]
+  }
+}

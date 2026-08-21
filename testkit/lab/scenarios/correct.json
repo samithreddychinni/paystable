@@ -1,0 +1,19 @@
+{
+  "name": "correct payment handling",
+  "program": "correct",
+  "order_id": "order_demo_correct",
+  "actions": [
+    {
+      "type": "deliver",
+      "event_id": "event_captured_correct",
+      "status": "captured"
+    },
+    {"type": "fulfill", "response": "lost"},
+    {"type": "fulfill", "response": "ok"},
+    {
+      "type": "deliver",
+      "event_id": "event_failed_earlier",
+      "status": "failed"
+    }
+  ]
+}

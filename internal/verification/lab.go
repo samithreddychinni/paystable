@@ -65,7 +65,7 @@ type runner struct {
 }
 
 func Run(schedule Schedule) (Result, error) {
-	if err := validate(schedule); err != nil {
+	if err := Validate(schedule); err != nil {
 		return Result{}, err
 	}
 	r := &runner{
@@ -78,26 +78,32 @@ func Run(schedule Schedule) (Result, error) {
 		}
 	}
 
-	result := Result{
-		Scenario: schedule.Name, Program: schedule.Program, FinalState: r.state,
-		EffectCount: r.effectCount, Trace: r.trace,
-	}
-	if r.effectCount > 1 {
-		result.Violations = append(result.Violations, Violation{
-			Invariant: InvariantFulfillmentAtMostOnce,
-			Detail:    fmt.Sprintf("order %s produced %d fulfillment effects", schedule.OrderID, r.effectCount),
-		})
-	}
-	if r.capturedOnce && r.state != "captured" {
-		result.Violations = append(result.Violations, Violation{
-			Invariant: InvariantTerminalStateStable,
-			Detail:    fmt.Sprintf("captured order %s regressed to %s", schedule.OrderID, r.state),
-		})
-	}
-	return result, nil
+	return ResultFor(schedule, r.state, r.capturedOnce, r.effectCount, r.trace), nil
 }
 
-func validate(schedule Schedule) error {
+// ResultFor applies the deterministic invariants to an observed execution.
+func ResultFor(schedule Schedule, finalState string, capturedOnce bool, effectCount int, trace []TraceEntry) Result {
+	result := Result{
+		Scenario: schedule.Name, Program: schedule.Program, FinalState: finalState,
+		EffectCount: effectCount, Violations: []Violation{}, Trace: trace,
+	}
+	if effectCount > 1 {
+		result.Violations = append(result.Violations, Violation{
+			Invariant: InvariantFulfillmentAtMostOnce,
+			Detail:    fmt.Sprintf("order %s produced %d fulfillment effects", schedule.OrderID, effectCount),
+		})
+	}
+	if capturedOnce && finalState != "captured" {
+		result.Violations = append(result.Violations, Violation{
+			Invariant: InvariantTerminalStateStable,
+			Detail:    fmt.Sprintf("captured order %s regressed to %s", schedule.OrderID, finalState),
+		})
+	}
+	return result
+}
+
+// Validate rejects schedules outside the bounded action grammar.
+func Validate(schedule Schedule) error {
 	if schedule.Name == "" || schedule.OrderID == "" || len(schedule.Actions) == 0 {
 		return fmt.Errorf("name, order_id, and actions are required")
 	}

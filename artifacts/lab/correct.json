@@ -1,0 +1,95 @@
+{
+  "version": 1,
+  "schedule": {
+    "name": "correct payment handling",
+    "program": "correct",
+    "order_id": "order_demo_correct",
+    "actions": [
+      {
+        "type": "deliver",
+        "event_id": "event_captured_correct",
+        "status": "captured"
+      },
+      {
+        "type": "fulfill",
+        "response": "lost"
+      },
+      {
+        "type": "fulfill",
+        "response": "ok"
+      },
+      {
+        "type": "deliver",
+        "event_id": "event_failed_earlier",
+        "status": "failed"
+      }
+    ]
+  },
+  "deterministic": true,
+  "executions": 2,
+  "result": {
+    "scenario": "correct payment handling",
+    "program": "correct",
+    "final_state": "captured",
+    "effect_count": 1,
+    "violations": [],
+    "trace": [
+      {
+        "sequence": 1,
+        "action": "checkpoint",
+        "detail": "event stored at after_deduplication",
+        "state": "",
+        "effect_count": 0
+      },
+      {
+        "sequence": 2,
+        "action": "deliver",
+        "detail": "payment state updated",
+        "state": "captured",
+        "effect_count": 0
+      },
+      {
+        "sequence": 3,
+        "action": "fulfill",
+        "detail": "fulfillment sink accepted key order_demo_correct",
+        "state": "captured",
+        "effect_count": 1
+      },
+      {
+        "sequence": 4,
+        "action": "response_lost",
+        "detail": "merchant did not receive the sink response",
+        "state": "captured",
+        "effect_count": 1
+      },
+      {
+        "sequence": 5,
+        "action": "restart",
+        "detail": "merchant process started",
+        "state": "captured",
+        "effect_count": 1
+      },
+      {
+        "sequence": 6,
+        "action": "fulfill",
+        "detail": "fulfillment sink accepted key order_demo_correct",
+        "state": "captured",
+        "effect_count": 1
+      },
+      {
+        "sequence": 7,
+        "action": "checkpoint",
+        "detail": "event stored at after_deduplication",
+        "state": "captured",
+        "effect_count": 1
+      },
+      {
+        "sequence": 8,
+        "action": "deliver",
+        "detail": "payment state updated",
+        "state": "captured",
+        "effect_count": 1
+      }
+    ]
+  }
+}
