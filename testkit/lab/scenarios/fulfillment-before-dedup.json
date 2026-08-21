@@ -1,0 +1,19 @@
+{
+  "name": "fulfillment before durable deduplication",
+  "program": "fulfill-before-dedup",
+  "order_id": "order_demo_1",
+  "actions": [
+    {
+      "type": "deliver",
+      "event_id": "event_captured_1",
+      "status": "captured",
+      "crash_at": "after_fulfillment"
+    },
+    {"type": "restart"},
+    {
+      "type": "deliver",
+      "event_id": "event_captured_1",
+      "status": "captured"
+    }
+  ]
+}

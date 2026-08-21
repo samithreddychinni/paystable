@@ -1,0 +1,14 @@
+{
+  "name": "new idempotency key after a lost response",
+  "program": "new-key-on-retry",
+  "order_id": "order_demo_2",
+  "actions": [
+    {
+      "type": "deliver",
+      "event_id": "event_captured_2",
+      "status": "captured"
+    },
+    {"type": "fulfill", "response": "lost"},
+    {"type": "fulfill", "response": "ok"}
+  ]
+}
