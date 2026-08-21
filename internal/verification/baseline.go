@@ -32,6 +32,8 @@ type BaselineRun struct {
 	FalseFindings         int     `json:"false_findings"`
 	RedundantSchedules    int     `json:"redundant_schedules"`
 	RedundantScheduleRate float64 `json:"redundant_schedule_rate"`
+	FeedbackUpdates       int     `json:"feedback_updates,omitempty"`
+	CoverageFeatures      int     `json:"coverage_features,omitempty"`
 }
 
 type BaselineSummary struct {
@@ -150,17 +152,23 @@ func graphCandidates(graph BehaviorGraph) []searchCandidate {
 		for _, current := range frontier {
 			for _, edge := range outgoing[current.node] {
 				actions := append(slices.Clone(current.actions), edge.Action)
-				feature := fmt.Sprintf("%#v", graph.Nodes[edge.To].State)
+				state := graph.Nodes[edge.To].State
+				feature := observableStateFeature(state.PaymentState, state.EffectCount)
 				features := append(slices.Clone(current.features), feature)
 				next = append(next, path{node: edge.To, actions: actions, features: features})
 				if graph.Nodes[edge.To].State.Running {
-					candidates = append(candidates, searchCandidate{actions: actions, features: features, terminal: feature})
+					terminal := fmt.Sprintf("%#v", state)
+					candidates = append(candidates, searchCandidate{actions: actions, features: features, terminal: terminal})
 				}
 			}
 		}
 		frontier = next
 	}
 	return candidates
+}
+
+func observableStateFeature(state string, effectCount int) string {
+	return fmt.Sprintf("%s|%d", state, effectCount)
 }
 
 // This quadratic ordering supports short laboratory schedules. Use a priority queue if the corpus grows.

@@ -3,10 +3,14 @@ package verification
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"slices"
 )
 
-const ScoutMethod = "scout"
+const (
+	ScoutMethod           = "scout"
+	ScoutClosedLoopMethod = "scout-closed-loop"
+)
 
 var scoutFeatureNames = []string{
 	"action_count",
@@ -111,6 +115,15 @@ func trainScout(corpus ProgramCorpus, excludedFamily string) (ScoutModel, error)
 
 // RunScoutReport trains Scout and evaluates it with the baseline execution budget.
 func RunScoutReport(corpus ProgramCorpus, budget int) (ScoutReport, error) {
+	return runScoutReport(corpus, budget, false)
+}
+
+// RunClosedLoopReport updates Scout after each runtime result.
+func RunClosedLoopReport(corpus ProgramCorpus, budget int) (ScoutReport, error) {
+	return runScoutReport(corpus, budget, true)
+}
+
+func runScoutReport(corpus ProgramCorpus, budget int, closedLoop bool) (ScoutReport, error) {
 	if budget < 50 || budget > 1000 {
 		return ScoutReport{}, fmt.Errorf("budget must be between 50 and 1000")
 	}
@@ -119,6 +132,11 @@ func RunScoutReport(corpus ProgramCorpus, budget int) (ScoutReport, error) {
 		return ScoutReport{}, err
 	}
 	report := ScoutReport{Version: 1, Evaluation: "leave-one-family-out", Budget: budget, Model: model}
+	method := ScoutMethod
+	if closedLoop {
+		report.Evaluation = "leave-one-family-out-closed-loop"
+		method = ScoutClosedLoopMethod
+	}
 	modelJSON, err := json.Marshal(model)
 	if err != nil {
 		return ScoutReport{}, err
@@ -138,17 +156,113 @@ func RunScoutReport(corpus ProgramCorpus, budget int) (ScoutReport, error) {
 			return ScoutReport{}, err
 		}
 		candidates := graphCandidates(graph)
-		slices.SortStableFunc(candidates, func(a, b searchCandidate) int {
-			return -compareFloat(rankingModel.score(a.actions), rankingModel.score(b.actions))
-		})
-		run, err := evaluateCandidates(ScoutMethod, program, candidates, budget)
+		var run BaselineRun
+		if closedLoop {
+			run, err = evaluateClosedLoop(program, candidates, budget, rankingModel)
+		} else {
+			rankScoutCandidates(candidates, rankingModel)
+			run, err = evaluateCandidates(method, program, candidates, budget)
+		}
 		if err != nil {
 			return ScoutReport{}, err
 		}
 		report.Runs = append(report.Runs, run)
 	}
-	report.Summary = summarizeBaseline(ScoutMethod, corpus, report.Runs)
+	report.Summary = summarizeBaseline(method, corpus, report.Runs)
 	return report, nil
+}
+
+func evaluateClosedLoop(program ProgramCase, candidates []searchCandidate, budget int, model ScoutModel) (BaselineRun, error) {
+	model.Weights = slices.Clone(model.Weights)
+	remaining := slices.Clone(candidates)
+	run := BaselineRun{Method: ScoutClosedLoopMethod, Program: program.Program}
+	seenBehavior := make(map[string]bool)
+	seenCoverage := make(map[string]bool)
+	for len(remaining) != 0 && run.Executions < budget {
+		rankClosedLoopCandidates(remaining, model, seenCoverage)
+		candidate := remaining[0]
+		remaining = remaining[1:]
+		run.Executions++
+		if seenBehavior[candidate.terminal] {
+			run.RedundantSchedules++
+		}
+		seenBehavior[candidate.terminal] = true
+		schedule := Schedule{
+			Name: "Scout closed-loop candidate", Program: program.Program,
+			OrderID: fmt.Sprintf("order_scout_feedback_%d", run.Executions), Actions: candidate.actions,
+		}
+		result, err := Run(schedule)
+		if err != nil {
+			return BaselineRun{}, fmt.Errorf("execute Scout candidate %d: %w", run.Executions, err)
+		}
+		if len(result.Violations) != 0 {
+			run.ReplayChecks++
+			replay, err := Run(schedule)
+			if err == nil && reflect.DeepEqual(result, replay) {
+				run.DeterministicReplays++
+				if resultHasInvariant(result, program.ExpectedInvariant) {
+					run.Found = true
+					run.FirstFindingExecution = run.Executions
+					break
+				}
+				run.FalseFindings++
+			}
+		}
+		newCoverage := recordTraceCoverage(seenCoverage, result)
+		run.CoverageFeatures += newCoverage
+		reward := -0.25
+		if newCoverage != 0 {
+			reward = 1
+		}
+		features := scoutFeatures(candidate.actions)
+		for i := range model.Weights {
+			model.Weights[i] += 0.01 * reward * features[i] / float64(len(candidate.actions))
+		}
+		run.FeedbackUpdates++
+	}
+	if run.Executions != 0 {
+		run.RedundantScheduleRate = float64(run.RedundantSchedules) / float64(run.Executions)
+	}
+	return run, nil
+}
+
+func rankScoutCandidates(candidates []searchCandidate, model ScoutModel) {
+	slices.SortStableFunc(candidates, func(a, b searchCandidate) int {
+		return -compareFloat(model.score(a.actions), model.score(b.actions))
+	})
+}
+
+func rankClosedLoopCandidates(candidates []searchCandidate, model ScoutModel, seenCoverage map[string]bool) {
+	slices.SortStableFunc(candidates, func(a, b searchCandidate) int {
+		aScore := model.score(a.actions) + coverageBonus(a, seenCoverage)
+		bScore := model.score(b.actions) + coverageBonus(b, seenCoverage)
+		return -compareFloat(aScore, bScore)
+	})
+}
+
+func coverageBonus(candidate searchCandidate, seenCoverage map[string]bool) float64 {
+	if len(seenCoverage) == 0 {
+		return 0
+	}
+	newFeatures := make(map[string]bool)
+	for _, feature := range candidate.features {
+		if !seenCoverage[feature] {
+			newFeatures[feature] = true
+		}
+	}
+	return 0.5 * float64(len(newFeatures))
+}
+
+func recordTraceCoverage(seen map[string]bool, result Result) int {
+	added := 0
+	for _, entry := range result.Trace {
+		feature := observableStateFeature(entry.State, entry.EffectCount)
+		if !seen[feature] {
+			seen[feature] = true
+			added++
+		}
+	}
+	return added
 }
 
 func (m ScoutModel) score(actions []Action) float64 {

@@ -65,6 +65,17 @@ the same summary measures as the baselines. Each fold excludes its target
 family from training. Scout uses deterministic CPU training.
 The 13-weight model does not require a GPU.
 
+## Run closed-loop Scout
+
+Run Scout with deterministic trace feedback:
+
+```bash
+go run ./testkit/lab closed-loop 50
+```
+
+After each non-finding run, Scout records new trace states and updates its
+weights. The invariant checks remain the only finding authority.
+
 ## Included schedules
 
 | File | Expected invariant |
