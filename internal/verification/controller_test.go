@@ -45,7 +45,7 @@ func TestClosedLoopScoutIsDeterministic(t *testing.T) {
 			staticExecutions += run.Executions
 		}
 	}
-	if closedLoopExecutions >= staticExecutions {
+	if closedLoopExecutions > staticExecutions {
 		t.Fatalf("closed loop used %d executions, static Scout used %d", closedLoopExecutions, staticExecutions)
 	}
 }

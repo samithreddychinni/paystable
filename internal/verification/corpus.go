@@ -17,7 +17,7 @@ type ProgramCase struct {
 
 // GenerateProgramCorpus returns the executable programs and their canonical schedules.
 func GenerateProgramCorpus() ProgramCorpus {
-	return ProgramCorpus{Version: 5, MaxScheduleActions: 4, Programs: []ProgramCase{
+	return ProgramCorpus{Version: 6, MaxScheduleActions: 4, Programs: []ProgramCase{
 		{
 			Family: "deduplication-order", Program: ProgramFulfillBeforeDedup,
 			GroundTruth: Schedule{
@@ -166,6 +166,16 @@ func GenerateProgramCorpus() ProgramCorpus {
 			ExpectedInvariant: InvariantExpectedAmount, ExpectedFinalState: "captured", ExpectedEffectCount: 0,
 		},
 		{
+			Family: "payment-order", Program: ProgramAcceptWrongOrder,
+			GroundTruth: Schedule{
+				Name: "payment order mismatch is accepted", Program: ProgramAcceptWrongOrder, OrderID: "order_corpus_binding_1",
+				Actions: []Action{{
+					Type: "deliver", EventID: "event_wrong_order", Status: "captured", PaymentOrderID: "order_other",
+				}},
+			},
+			ExpectedInvariant: InvariantExpectedOrder, ExpectedFinalState: "captured", ExpectedEffectCount: 0,
+		},
+		{
 			Family: "correct", Program: ProgramCorrect,
 			GroundTruth: Schedule{
 				Name: "correct payment handling", Program: ProgramCorrect, OrderID: "order_corpus_8",
@@ -198,6 +208,18 @@ func GenerateProgramCorpus() ProgramCorpus {
 				Actions: []Action{
 					{Type: "deliver", EventID: "event_wrong_amount", Status: "captured", Amount: 1},
 					{Type: "deliver", EventID: "event_captured", Status: "captured", Amount: ExpectedPaymentAmount},
+					{Type: "fulfill", Response: "ok"},
+				},
+			},
+			ExpectedFinalState: "captured", ExpectedEffectCount: 1,
+		},
+		{
+			Family: "correct-order", Program: ProgramCorrectOrder,
+			GroundTruth: Schedule{
+				Name: "payment order mismatch is rejected", Program: ProgramCorrectOrder, OrderID: "order_corpus_binding_2",
+				Actions: []Action{
+					{Type: "deliver", EventID: "event_wrong_order", Status: "captured", PaymentOrderID: "order_other"},
+					{Type: "deliver", EventID: "event_captured", Status: "captured"},
 					{Type: "fulfill", Response: "ok"},
 				},
 			},

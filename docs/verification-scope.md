@@ -98,11 +98,13 @@ The first benchmark will include these bug classes:
 7. A database deadlock causes a retry with a new idempotency key.
 8. Fulfillment continues after the retry limit.
 9. A captured payment amount differs from the expected order amount.
+10. A captured payment belongs to a different order.
 
 The retry class includes lost responses, timeouts, connection resets, HTTP 500 responses, database conflicts, and deadlocks.
 The retry-exhaustion class allows two uncertain fulfillment attempts.
 Action order represents delayed webhook delivery without wall-clock waits.
 The amount class uses the fixed INR test order amount of 49900 paise.
+The order class compares the payment order ID with the expected order ID.
 
 ## Evaluation gates
 

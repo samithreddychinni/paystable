@@ -1,0 +1,22 @@
+{
+  "name": "payment order mismatch is rejected",
+  "program": "correct-order",
+  "order_id": "order_binding_2",
+  "actions": [
+    {
+      "type": "deliver",
+      "event_id": "event_wrong_order",
+      "status": "captured",
+      "payment_order_id": "order_other"
+    },
+    {
+      "type": "deliver",
+      "event_id": "event_captured",
+      "status": "captured"
+    },
+    {
+      "type": "fulfill",
+      "response": "ok"
+    }
+  ]
+}

@@ -189,6 +189,20 @@ func (a *app) deliver(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if verification.HasOrderMismatch(current.orderID, action) && current.program != verification.ProgramAcceptWrongOrder {
+		if err := a.record(r.Context(), "reject", "payment order mismatch rejected"); err != nil {
+			http.Error(w, "could not record the order rejection", http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	if verification.HasOrderMismatch(current.orderID, action) {
+		if err := a.record(r.Context(), "order_mismatch_accept", "payment order mismatch accepted"); err != nil {
+			http.Error(w, "could not record the order mismatch", http.StatusInternalServerError)
+			return
+		}
+	}
 	if verification.FulfillsBeforeDedup(current.program, action) && action.Status == "captured" {
 		if err := a.effectBeforeDedup(r, current.orderID); err != nil {
 			http.Error(w, "could not record fulfillment", http.StatusInternalServerError)

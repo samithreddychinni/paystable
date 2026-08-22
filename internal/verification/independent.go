@@ -46,7 +46,7 @@ type independentCase struct {
 	execute func(Schedule) (Result, error)
 }
 
-type rawAmountMerchant interface {
+type rawMerchant interface {
 	Deliver([]byte) (bool, error)
 	Fulfill() error
 	Snapshot() merchantcase.Snapshot
@@ -78,7 +78,7 @@ func RunIndependentReport(training ProgramCorpus, budget int, seed int64) (Indep
 		return IndependentReport{}, err
 	}
 	report := IndependentReport{
-		Version: 6, Evaluation: "independent-merchant-implementations",
+		Version: 7, Evaluation: "independent-merchant-implementations",
 		Budget: budget, Seed: seed, ScoutModelBytes: len(modelJSON),
 	}
 	for offset := int64(0); offset < 20; offset++ {
@@ -192,6 +192,7 @@ func independentCases() []independentCase {
 	trustedFailed := Action{Type: "deliver", EventID: "failed", Status: "failed"}
 	parallelCaptured := Action{Type: "deliver", EventID: "parallel", Status: "captured", Parallel: 2}
 	wrongAmount := Action{Type: "deliver", EventID: "wrong-amount", Status: "captured", Amount: 1}
+	wrongOrder := Action{Type: "deliver", EventID: "wrong-order", Status: "captured", PaymentOrderID: "order_other"}
 	databaseConflict := Action{Type: "fulfill", Response: "db-conflict"}
 	databaseDeadlock := Action{Type: "fulfill", Response: "db-deadlock"}
 	serverError := Action{Type: "fulfill", Response: "http-500"}
@@ -299,6 +300,20 @@ func independentCases() []independentCase {
 			actions: []Action{trustedCaptured, trustedFailed, wrongAmount, fulfillOK},
 			execute: func(schedule Schedule) (Result, error) {
 				return runRawAmountMerchant(schedule, merchantcase.NewCorrectAmount(ExpectedPaymentAmount))
+			},
+		},
+		{
+			program: ProgramCase{Program: "raw-json-order-unsafe", Family: "payment-order", ExpectedInvariant: InvariantExpectedOrder},
+			actions: []Action{trustedCaptured, trustedFailed, wrongOrder, fulfillOK},
+			execute: func(schedule Schedule) (Result, error) {
+				return runRawBindingMerchant(schedule, merchantcase.NewVulnerableBinding())
+			},
+		},
+		{
+			program: ProgramCase{Program: "raw-json-order-safe", Family: "correct-order"},
+			actions: []Action{trustedCaptured, trustedFailed, wrongOrder, fulfillOK},
+			execute: func(schedule Schedule) (Result, error) {
+				return runRawBindingMerchant(schedule, merchantcase.NewCorrectBinding(schedule.OrderID))
 			},
 		},
 	}
@@ -728,7 +743,7 @@ func runIndependentAmount(schedule Schedule, unsafe bool) (Result, error) {
 	return s.result(schedule), nil
 }
 
-func runRawAmountMerchant(schedule Schedule, merchant rawAmountMerchant) (Result, error) {
+func runRawAmountMerchant(schedule Schedule, merchant rawMerchant) (Result, error) {
 	if err := validateIndependent(schedule); err != nil {
 		return Result{}, err
 	}
@@ -774,6 +789,58 @@ func runRawAmountMerchant(schedule Schedule, merchant rawAmountMerchant) (Result
 			record("fulfill", "fulfillment sink accepted the stable key")
 		default:
 			return Result{}, fmt.Errorf("raw amount merchant does not support %s", action.Type)
+		}
+	}
+	snapshot := merchant.Snapshot()
+	return ResultFor(schedule, snapshot.State, snapshot.CapturedOnce, snapshot.EffectCount, trace), nil
+}
+
+func runRawBindingMerchant(schedule Schedule, merchant rawMerchant) (Result, error) {
+	if err := validateIndependent(schedule); err != nil {
+		return Result{}, err
+	}
+	var trace []TraceEntry
+	record := func(action, detail string) {
+		snapshot := merchant.Snapshot()
+		trace = append(trace, TraceEntry{
+			Sequence: len(trace) + 1, Action: action, Detail: detail,
+			State: snapshot.State, EffectCount: snapshot.EffectCount,
+		})
+	}
+	for _, action := range schedule.Actions {
+		switch action.Type {
+		case "deliver":
+			orderID := action.PaymentOrderID
+			if orderID == "" {
+				orderID = schedule.OrderID
+			}
+			body, err := json.Marshal(struct {
+				EventID string `json:"event_id"`
+				Status  string `json:"status"`
+				OrderID string `json:"order_id"`
+			}{action.EventID, action.Status, orderID})
+			if err != nil {
+				return Result{}, err
+			}
+			accepted, err := merchant.Deliver(body)
+			if err != nil {
+				return Result{}, err
+			}
+			if !accepted {
+				record("reject", "payment order mismatch rejected")
+				continue
+			}
+			if HasOrderMismatch(schedule.OrderID, action) {
+				record("order_mismatch_accept", "payment order mismatch accepted")
+			}
+			record("deliver", "raw payment event processed")
+		case "fulfill":
+			if err := merchant.Fulfill(); err != nil {
+				return Result{}, err
+			}
+			record("fulfill", "fulfillment sink accepted the stable key")
+		default:
+			return Result{}, fmt.Errorf("raw order merchant does not support %s", action.Type)
 		}
 	}
 	snapshot := merchant.Snapshot()

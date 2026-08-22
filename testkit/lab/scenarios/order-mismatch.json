@@ -1,0 +1,13 @@
+{
+  "name": "payment order mismatch is accepted",
+  "program": "accept-wrong-order",
+  "order_id": "order_binding_1",
+  "actions": [
+    {
+      "type": "deliver",
+      "event_id": "event_wrong_order",
+      "status": "captured",
+      "payment_order_id": "order_other"
+    }
+  ]
+}

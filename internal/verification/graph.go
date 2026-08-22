@@ -28,6 +28,7 @@ type BehaviorState struct {
 	PendingFulfillment  bool     `json:"pending_fulfillment"`
 	UntrustedAccepted   bool     `json:"untrusted_accepted"`
 	WrongAmountAccepted bool     `json:"wrong_amount_accepted"`
+	WrongOrderAccepted  bool     `json:"wrong_order_accepted"`
 	EffectCount         int      `json:"effect_count"`
 	EffectAttempt       int      `json:"effect_attempt"`
 	SeenEvents          []string `json:"seen_events"`
@@ -53,7 +54,7 @@ func CompileBehaviorGraph(program string, maxActions int) (BehaviorGraph, error)
 		schedule: Schedule{Name: "payment behavior graph", Program: program, OrderID: "order_graph"},
 		running:  true, seen: make(map[string]bool), effects: make(map[string]bool),
 	}
-	graph := BehaviorGraph{Version: 5, Program: program, MaxActions: maxActions}
+	graph := BehaviorGraph{Version: 6, Program: program, MaxActions: maxActions}
 	graph.Nodes = append(graph.Nodes, BehaviorNode{ID: 0, State: behaviorState(initial)})
 	states := []*runner{initial}
 	nodeByState := map[string]int{behaviorStateKey(0, initial): 0}
@@ -117,6 +118,9 @@ func behaviorActions(program string) []Action {
 	if program == ProgramAcceptWrongAmount || program == ProgramCorrectAmount {
 		actions = append(actions, Action{Type: "deliver", EventID: "event_wrong_amount", Status: "captured", Amount: 1})
 	}
+	if program == ProgramAcceptWrongOrder || program == ProgramCorrectOrder {
+		actions = append(actions, Action{Type: "deliver", EventID: "event_wrong_order", Status: "captured", PaymentOrderID: "order_other"})
+	}
 	switch program {
 	case ProgramNewKeyOnTimeout, ProgramCorrectNetwork:
 		actions = append(actions, Action{Type: "fulfill", Response: "timeout"})
@@ -155,7 +159,8 @@ func behaviorState(r *runner) BehaviorState {
 	state := BehaviorState{
 		Running: r.running, PaymentState: r.state, CapturedOnce: r.capturedOnce,
 		PendingFulfillment: r.pendingEffect, UntrustedAccepted: r.untrusted, WrongAmountAccepted: r.wrongAmount,
-		EffectCount: r.effectCount, EffectAttempt: r.effectAttempt,
+		WrongOrderAccepted: r.wrongOrder,
+		EffectCount:        r.effectCount, EffectAttempt: r.effectAttempt,
 		SeenEvents: []string{}, FulfillmentKeys: []string{},
 	}
 	for event := range r.seen {

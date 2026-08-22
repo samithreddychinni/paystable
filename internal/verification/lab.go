@@ -26,11 +26,14 @@ const (
 	ProgramCorrectDBDeadlock             = "correct-db-deadlock"
 	ProgramAcceptWrongAmount             = "accept-wrong-amount"
 	ProgramCorrectAmount                 = "correct-amount"
+	ProgramAcceptWrongOrder              = "accept-wrong-order"
+	ProgramCorrectOrder                  = "correct-order"
 	InvariantFulfillmentAtMostOnce       = "INV-2"
 	InvariantTerminalStateStable         = "INV-4"
 	InvariantTrustedEventsOnly           = "INV-SEC-1"
 	InvariantRetryBounded                = "INV-RETRY-1"
 	InvariantExpectedAmount              = "INV-AMOUNT-1"
+	InvariantExpectedOrder               = "INV-ORDER-1"
 	ExpectedPaymentAmount          int64 = 49900
 )
 
@@ -42,14 +45,15 @@ type Schedule struct {
 }
 
 type Action struct {
-	Type     string `json:"type"`
-	EventID  string `json:"event_id,omitempty"`
-	Status   string `json:"status,omitempty"`
-	CrashAt  string `json:"crash_at,omitempty"`
-	Response string `json:"response,omitempty"`
-	Trust    string `json:"trust,omitempty"`
-	Parallel int    `json:"parallel,omitempty"`
-	Amount   int64  `json:"amount,omitempty"`
+	Type           string `json:"type"`
+	EventID        string `json:"event_id,omitempty"`
+	Status         string `json:"status,omitempty"`
+	CrashAt        string `json:"crash_at,omitempty"`
+	Response       string `json:"response,omitempty"`
+	Trust          string `json:"trust,omitempty"`
+	Parallel       int    `json:"parallel,omitempty"`
+	Amount         int64  `json:"amount,omitempty"`
+	PaymentOrderID string `json:"payment_order_id,omitempty"`
 }
 
 type TraceEntry struct {
@@ -84,6 +88,7 @@ type runner struct {
 	pendingEffect bool
 	untrusted     bool
 	wrongAmount   bool
+	wrongOrder    bool
 	effects       map[string]bool
 	effectCount   int
 	effectAttempt int
@@ -147,6 +152,13 @@ func ResultFor(schedule Schedule, finalState string, capturedOnce bool, effectCo
 			})
 			break
 		}
+		if entry.Action == "order_mismatch_accept" {
+			result.Violations = append(result.Violations, Violation{
+				Invariant: InvariantExpectedOrder,
+				Detail:    fmt.Sprintf("order %s accepted a payment for another order", schedule.OrderID),
+			})
+			break
+		}
 	}
 	return result
 }
@@ -184,14 +196,14 @@ func Validate(schedule Schedule) error {
 				return fmt.Errorf("action %d cannot combine parallel delivery with a crash", i+1)
 			}
 		case "fulfill":
-			if action.EventID != "" || action.Status != "" || action.CrashAt != "" || action.Trust != "" || action.Parallel != 0 || action.Amount != 0 {
+			if action.EventID != "" || action.Status != "" || action.CrashAt != "" || action.Trust != "" || action.Parallel != 0 || action.Amount != 0 || action.PaymentOrderID != "" {
 				return fmt.Errorf("action %d has fields that fulfill does not use", i+1)
 			}
 			if action.Response != "ok" && action.Response != "lost" && action.Response != "timeout" && action.Response != "connection-reset" && action.Response != "http-500" && action.Response != "db-conflict" && action.Response != "db-deadlock" {
 				return fmt.Errorf("action %d has an invalid fulfillment response", i+1)
 			}
 		case "restart":
-			if action.EventID != "" || action.Status != "" || action.CrashAt != "" || action.Response != "" || action.Trust != "" || action.Parallel != 0 || action.Amount != 0 {
+			if action.EventID != "" || action.Status != "" || action.CrashAt != "" || action.Response != "" || action.Trust != "" || action.Parallel != 0 || action.Amount != 0 || action.PaymentOrderID != "" {
 				return fmt.Errorf("action %d has fields that restart does not use", i+1)
 			}
 		default:
@@ -208,7 +220,7 @@ func supportedProgram(program string) bool {
 		ProgramNewKeyOnDBConflict, ProgramNewKeyOnDBDeadlock, ProgramRetryForever, ProgramRetryBounded,
 		ProgramTerminalStable, ProgramAcceptUntrusted, ProgramCorrectSecurity,
 		ProgramCorrectNetwork, ProgramCorrectDBConflict, ProgramCorrectDBDeadlock,
-		ProgramAcceptWrongAmount, ProgramCorrectAmount:
+		ProgramAcceptWrongAmount, ProgramCorrectAmount, ProgramAcceptWrongOrder, ProgramCorrectOrder:
 		return true
 	}
 	return false
@@ -258,6 +270,14 @@ func (r *runner) deliver(action Action) error {
 		r.wrongAmount = true
 		r.record("amount_mismatch_accept", "payment amount mismatch accepted")
 	}
+	if HasOrderMismatch(r.schedule.OrderID, action) && r.schedule.Program != ProgramAcceptWrongOrder {
+		r.record("reject", "payment order mismatch rejected")
+		return nil
+	}
+	if HasOrderMismatch(r.schedule.OrderID, action) {
+		r.wrongOrder = true
+		r.record("order_mismatch_accept", "payment order mismatch accepted")
+	}
 
 	beforeDedup := FulfillsBeforeDedup(r.schedule.Program, action)
 	if beforeDedup && action.Status == "captured" {
@@ -293,6 +313,11 @@ func (r *runner) deliver(action Action) error {
 // HasAmountMismatch reports whether an explicit payment amount differs from the expected amount.
 func HasAmountMismatch(action Action) bool {
 	return action.Amount != 0 && action.Amount != ExpectedPaymentAmount
+}
+
+// HasOrderMismatch reports whether an explicit payment order differs from the schedule order.
+func HasOrderMismatch(expected string, action Action) bool {
+	return action.PaymentOrderID != "" && action.PaymentOrderID != expected
 }
 
 // FulfillsBeforeDedup reports whether delivery can cause an effect before the event claim.

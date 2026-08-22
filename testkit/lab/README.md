@@ -63,7 +63,7 @@ go run ./testkit/lab scout 50
 The report includes the final model, evaluation fold models, search runs, and
 the same summary measures as the baselines. Each fold excludes its target
 family from training. Scout starts with payment-risk priors and uses deterministic CPU training.
-The 22-weight model does not require a GPU.
+The 23-weight model does not require a GPU.
 
 ## Run closed-loop Scout
 
@@ -86,12 +86,13 @@ Evaluate all methods against merchant implementations outside the training simul
 go run ./testkit/lab independent 50 7
 ```
 
-The benchmark contains ten vulnerable implementations and ten correct implementations.
+The benchmark contains eleven vulnerable implementations and eleven correct implementations.
 The random baseline uses 20 consecutive seeds.
 The report includes Wilson 95% intervals for `Success@10`.
 Two amount implementations parse raw webhook JSON in a separate package.
 They do not import simulator code.
 They are repository-authored implementations, not third-party code.
+Two order implementations use the same independent boundary.
 
 ## Verify the constrained repair
 
@@ -145,6 +146,7 @@ output, Compose files, and the dashboard.
 | `new-key-after-db-deadlock.json` | `INV-2` |
 | `retry-overrun.json` | `INV-RETRY-1` |
 | `amount-mismatch.json` | `INV-AMOUNT-1` |
+| `order-mismatch.json` | `INV-ORDER-1` |
 | `stale-terminal-regression.json` | `INV-4` |
 | `correct-terminal.json` | none |
 | `invalid-signature.json` | `INV-SEC-1` |
@@ -155,6 +157,7 @@ output, Compose files, and the dashboard.
 | `correct-db-deadlock.json` | none |
 | `correct-retry-exhaustion.json` | none |
 | `correct-amount.json` | none |
+| `correct-order.json` | none |
 | `correct-security.json` | none |
 | `correct.json` | none |
 
@@ -181,6 +184,7 @@ Docker runs the same fault contract over HTTP and PostgreSQL.
 
 The merchant verifies each raw delivery body before it decodes the JSON.
 The merchant rejects a captured payment when its explicit amount differs from 49900 paise.
+The merchant rejects a payment when its explicit order ID differs from the schedule order.
 The merchant stores events, payment state, effects, and traces in PostgreSQL.
 The laboratory creates real response timeouts, connection resets, and HTTP 500 responses.
 It also sends concurrent webhooks through competing PostgreSQL transactions.
