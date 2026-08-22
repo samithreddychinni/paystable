@@ -146,6 +146,12 @@ All retry transport outcomes use one held-out family.
 An independent benchmark must execute merchant code outside the training simulator.
 It must include vulnerable and correct implementations for each supported family.
 Scout must use fixed payment-risk priors when a fold excludes a known failure family.
+The release must also publish a prior-free held-out report.
+This report measures learned generalization without the fixed risk priors.
+A seeded stress report must shuffle equal-score schedules before ranking.
+The stress report must add matched safe schedules for mismatch actions.
+The same report must place safe schedules first for an adversarial tie check.
+A perfect bounded score does not prove production accuracy.
 
 ## Stretch work
 
@@ -193,3 +199,16 @@ This release will not do the following work:
 - execute unknown repositories in a hosted service
 - use a third-party language model as a payment oracle
 - deploy a repair without merchant approval.
+
+## Evidence limits
+
+Scout ranks test schedules. It does not approve payments or declare failures.
+Deterministic invariants decide whether each execution found a bug.
+
+The current corpus is synthetic.
+The independent merchants are repository-authored.
+One genuine Test Mode webhook proves the signed integration path.
+These results do not describe an unknown production traffic distribution.
+
+Run the prior-free stress report before you publish benchmark claims.
+Use sanitized shadow traffic and external merchant implementations before a production claim.

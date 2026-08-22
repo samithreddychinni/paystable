@@ -57,6 +57,20 @@ func main() {
 		writeJSON(report)
 		return
 	}
+	if len(os.Args) == 3 && os.Args[1] == "prior-free" {
+		budget, err := strconv.Atoi(os.Args[2])
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "budget must be an integer")
+			os.Exit(2)
+		}
+		report, err := verification.RunPriorFreeScoutReport(verification.GenerateProgramCorpus(), budget)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "run prior-free Scout:", err)
+			os.Exit(1)
+		}
+		writeJSON(report)
+		return
+	}
 	if len(os.Args) == 4 && os.Args[1] == "baselines" {
 		budget, err := strconv.Atoi(os.Args[2])
 		if err != nil {
@@ -71,6 +85,25 @@ func main() {
 		report, err := verification.RunBaselineReport(verification.GenerateProgramCorpus(), budget, seed)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "run baselines:", err)
+			os.Exit(1)
+		}
+		writeJSON(report)
+		return
+	}
+	if len(os.Args) == 4 && os.Args[1] == "prior-free-stress" {
+		budget, err := strconv.Atoi(os.Args[2])
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "budget must be an integer")
+			os.Exit(2)
+		}
+		seed, err := strconv.ParseInt(os.Args[3], 10, 64)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "seed must be an integer")
+			os.Exit(2)
+		}
+		report, err := verification.RunPriorFreeStressReport(verification.GenerateProgramCorpus(), budget, seed)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "run prior-free stress report:", err)
 			os.Exit(1)
 		}
 		writeJSON(report)
@@ -138,7 +171,7 @@ func main() {
 		return
 	}
 	if len(os.Args) != 2 {
-		fmt.Fprintln(os.Stderr, "usage: lab SCHEDULE.json\n       lab baselines BUDGET SEED\n       lab closed-loop BUDGET\n       lab corpus\n       lab demo\n       lab graph PROGRAM MAX_ACTIONS\n       lab independent BUDGET SEED\n       lab performance BUDGET SEED REPETITIONS\n       lab repair\n       lab scout BUDGET")
+		fmt.Fprintln(os.Stderr, "usage: lab SCHEDULE.json\n       lab baselines BUDGET SEED\n       lab closed-loop BUDGET\n       lab corpus\n       lab demo\n       lab graph PROGRAM MAX_ACTIONS\n       lab independent BUDGET SEED\n       lab performance BUDGET SEED REPETITIONS\n       lab prior-free BUDGET\n       lab prior-free-stress BUDGET SEED\n       lab repair\n       lab scout BUDGET")
 		os.Exit(2)
 	}
 	file, err := os.Open(os.Args[1])

@@ -65,6 +65,31 @@ the same summary measures as the baselines. Each fold excludes its target
 family from training. Scout starts with payment-risk priors and uses deterministic CPU training.
 The 24-weight model does not require a GPU.
 
+## Measure prior-free generalization
+
+Run held-out evaluation without fixed payment-risk priors:
+
+```bash
+go run ./testkit/lab prior-free 50
+```
+
+This report measures how the learned weights rank each held-out failure family.
+It does not use the fixed risk priors.
+Compare this report with the standard Scout report to measure the prior gap.
+A perfect standard score does not prove production accuracy.
+
+Shuffle equal-score schedules across 20 seeded trials:
+
+```bash
+go run ./testkit/lab prior-free-stress 50 7
+```
+
+This report exposes results that depend on a favorable graph order.
+It includes a Wilson 95% interval for `Success@10`.
+It adds matched safe amount and currency schedules with the same event IDs.
+It also puts safe schedules first when their scores tie with failing schedules.
+This adversarial result shows failures that Scout cannot distinguish by score.
+
 ## Run closed-loop Scout
 
 Run Scout with deterministic trace feedback:

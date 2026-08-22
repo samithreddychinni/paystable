@@ -3,6 +3,8 @@ package verification
 import (
 	"encoding/json"
 	"fmt"
+	"math"
+	"math/rand"
 	"reflect"
 	"slices"
 )
@@ -10,6 +12,7 @@ import (
 const (
 	ScoutMethod           = "scout"
 	ScoutClosedLoopMethod = "scout-closed-loop"
+	ScoutPriorFreeMethod  = "scout-prior-free"
 )
 
 var scoutFeatureNames = []string{
@@ -75,18 +78,38 @@ type ScoutFold struct {
 	Model         ScoutModel `json:"model"`
 }
 
+type ScoutStressReport struct {
+	Version              int               `json:"version"`
+	Evaluation           string            `json:"evaluation"`
+	Budget               int               `json:"budget"`
+	Seed                 int64             `json:"seed"`
+	RandomSeeds          []int64           `json:"random_seeds"`
+	Runs                 []BaselineRun     `json:"runs"`
+	Confidence           SuccessConfidence `json:"success_at_10_confidence"`
+	AmbiguousScoreGroups int               `json:"ambiguous_score_groups"`
+	AmbiguousFamilies    []string          `json:"ambiguous_families"`
+	AdversarialRuns      []BaselineRun     `json:"adversarial_runs"`
+	AdversarialSummary   BaselineSummary   `json:"adversarial_summary"`
+}
+
 // TrainScout fits a linear pairwise ranker to deterministic invariant results.
 func TrainScout(corpus ProgramCorpus) (ScoutModel, error) {
 	return trainScout(corpus, "")
 }
 
 func trainScout(corpus ProgramCorpus, excludedFamily string) (ScoutModel, error) {
+	return trainScoutWithPriors(corpus, excludedFamily, true)
+}
+
+func trainScoutWithPriors(corpus ProgramCorpus, excludedFamily string, fixedPriors bool) (ScoutModel, error) {
 	model := ScoutModel{
 		Version: 2, FeatureNames: slices.Clone(scoutFeatureNames),
 		Weights: make([]float64, len(scoutFeatureNames)), Epochs: 40, LearningRate: 0.01,
 	}
-	for i, name := range model.FeatureNames {
-		model.Weights[i] = scoutPriorWeights[name]
+	if fixedPriors {
+		for i, name := range model.FeatureNames {
+			model.Weights[i] = scoutPriorWeights[name]
+		}
 	}
 	type pair struct{ positive, negative []float64 }
 	var pairs []pair
@@ -140,19 +163,189 @@ func trainScout(corpus ProgramCorpus, excludedFamily string) (ScoutModel, error)
 
 // RunScoutReport trains Scout and evaluates it with the baseline execution budget.
 func RunScoutReport(corpus ProgramCorpus, budget int) (ScoutReport, error) {
-	return runScoutReport(corpus, budget, false)
+	return runScoutReport(corpus, budget, false, true)
 }
 
 // RunClosedLoopReport updates Scout after each runtime result.
 func RunClosedLoopReport(corpus ProgramCorpus, budget int) (ScoutReport, error) {
-	return runScoutReport(corpus, budget, true)
+	return runScoutReport(corpus, budget, true, true)
 }
 
-func runScoutReport(corpus ProgramCorpus, budget int, closedLoop bool) (ScoutReport, error) {
+// RunPriorFreeScoutReport evaluates held-out families without fixed risk priors.
+func RunPriorFreeScoutReport(corpus ProgramCorpus, budget int) (ScoutReport, error) {
+	return runScoutReport(corpus, budget, false, false)
+}
+
+// RunPriorFreeStressReport shuffles score ties across repeated held-out trials.
+func RunPriorFreeStressReport(corpus ProgramCorpus, budget int, seed int64) (ScoutStressReport, error) {
+	if budget < 50 || budget > 1000 {
+		return ScoutStressReport{}, fmt.Errorf("budget must be between 50 and 1000")
+	}
+	report := ScoutStressReport{
+		Version: 1, Evaluation: "leave-one-family-out-prior-free-tie-stress", Budget: budget, Seed: seed,
+	}
+	for offset := int64(0); offset < 20; offset++ {
+		report.RandomSeeds = append(report.RandomSeeds, seed+offset)
+	}
+	fullModel, err := trainScoutWithPriors(corpus, "", false)
+	if err != nil {
+		return ScoutStressReport{}, err
+	}
+	foldModels := make(map[string]ScoutModel)
+	ambiguousFamilies := make(map[string]bool)
+	for programIndex, program := range corpus.Programs {
+		model := fullModel
+		if program.ExpectedInvariant != "" {
+			model, err = priorFreeFoldModel(corpus, program.Family, foldModels)
+			if err != nil {
+				return ScoutStressReport{}, err
+			}
+		}
+		graph, err := CompileBehaviorGraph(program.Program, corpus.MaxScheduleActions)
+		if err != nil {
+			return ScoutStressReport{}, err
+		}
+		candidates := graphCandidates(graph)
+		candidates, err = addPriorFreeHardNegatives(program, candidates)
+		if err != nil {
+			return ScoutStressReport{}, err
+		}
+		for _, trialSeed := range report.RandomSeeds {
+			trial := slices.Clone(candidates)
+			random := rand.New(rand.NewSource(trialSeed + int64(programIndex)*int64(len(report.RandomSeeds))))
+			random.Shuffle(len(trial), func(i, j int) { trial[i], trial[j] = trial[j], trial[i] })
+			rankScoutCandidates(trial, model)
+			run, err := evaluateCandidates(ScoutPriorFreeMethod, program, trial, budget)
+			if err != nil {
+				return ScoutStressReport{}, err
+			}
+			report.Runs = append(report.Runs, run)
+		}
+		type labeledCandidate struct {
+			candidate searchCandidate
+			score     float64
+			violates  bool
+		}
+		labeled := make([]labeledCandidate, 0, len(candidates))
+		groups := make(map[uint64]struct{ safe, failing bool })
+		for candidateIndex, candidate := range candidates {
+			schedule := Schedule{
+				Name: "prior-free stress candidate", Program: program.Program,
+				OrderID: fmt.Sprintf("order_prior_free_stress_%d", candidateIndex+1), Actions: candidate.actions,
+			}
+			result, err := Run(schedule)
+			if err != nil {
+				return ScoutStressReport{}, err
+			}
+			violates := resultHasInvariant(result, program.ExpectedInvariant)
+			score := model.score(candidate.actions)
+			labeled = append(labeled, labeledCandidate{candidate: candidate, score: score, violates: violates})
+			group := groups[math.Float64bits(score)]
+			if violates {
+				group.failing = true
+			} else {
+				group.safe = true
+			}
+			groups[math.Float64bits(score)] = group
+		}
+		for _, group := range groups {
+			if group.safe && group.failing {
+				report.AmbiguousScoreGroups++
+				ambiguousFamilies[program.Family] = true
+			}
+		}
+		slices.SortStableFunc(labeled, func(a, b labeledCandidate) int {
+			if order := -compareFloat(a.score, b.score); order != 0 {
+				return order
+			}
+			if a.violates == b.violates {
+				return 0
+			}
+			if a.violates {
+				return 1
+			}
+			return -1
+		})
+		adversarial := make([]searchCandidate, len(labeled))
+		for i := range labeled {
+			adversarial[i] = labeled[i].candidate
+		}
+		adversarialRun, err := evaluateCandidates(ScoutPriorFreeMethod, program, adversarial, budget)
+		if err != nil {
+			return ScoutStressReport{}, err
+		}
+		report.AdversarialRuns = append(report.AdversarialRuns, adversarialRun)
+	}
+	for family := range ambiguousFamilies {
+		report.AmbiguousFamilies = append(report.AmbiguousFamilies, family)
+	}
+	slices.Sort(report.AmbiguousFamilies)
+	report.Confidence = successConfidence(ScoutPriorFreeMethod, corpus, report.Runs)
+	report.AdversarialSummary = summarizeBaseline(ScoutPriorFreeMethod, corpus, report.AdversarialRuns)
+	return report, nil
+}
+
+func addPriorFreeHardNegatives(program ProgramCase, candidates []searchCandidate) ([]searchCandidate, error) {
+	if program.Family != "payment-amount" && program.Family != "payment-currency" {
+		return candidates, nil
+	}
+	augmented := slices.Clone(candidates)
+	for candidateIndex, candidate := range candidates {
+		actions := slices.Clone(candidate.actions)
+		changed := false
+		for i := range actions {
+			if program.Family == "payment-amount" && HasAmountMismatch(actions[i]) {
+				actions[i].Amount = ExpectedPaymentAmount
+				changed = true
+			}
+			if program.Family == "payment-currency" && HasCurrencyMismatch(actions[i]) {
+				actions[i].Currency = ExpectedPaymentCurrency
+				changed = true
+			}
+		}
+		if !changed {
+			continue
+		}
+		schedule := Schedule{
+			Name: "prior-free hard negative", Program: program.Program,
+			OrderID: fmt.Sprintf("order_prior_free_negative_%d", candidateIndex+1), Actions: actions,
+		}
+		result, err := Run(schedule)
+		if err != nil {
+			return nil, err
+		}
+		if resultHasInvariant(result, program.ExpectedInvariant) {
+			return nil, fmt.Errorf("hard negative violates %s", program.ExpectedInvariant)
+		}
+		features := make([]string, 0, len(result.Trace))
+		for _, entry := range result.Trace {
+			features = append(features, observableStateFeature(entry.State, entry.EffectCount))
+		}
+		augmented = append(augmented, searchCandidate{
+			actions: actions, features: features,
+			terminal: fmt.Sprintf("%s|%d|%#v", result.FinalState, result.EffectCount, result.Violations),
+			profile:  scoutProfile(actions),
+		})
+	}
+	return augmented, nil
+}
+
+func priorFreeFoldModel(corpus ProgramCorpus, family string, models map[string]ScoutModel) (ScoutModel, error) {
+	if model, exists := models[family]; exists {
+		return model, nil
+	}
+	model, err := trainScoutWithPriors(corpus, family, false)
+	if err == nil {
+		models[family] = model
+	}
+	return model, err
+}
+
+func runScoutReport(corpus ProgramCorpus, budget int, closedLoop, fixedPriors bool) (ScoutReport, error) {
 	if budget < 50 || budget > 1000 {
 		return ScoutReport{}, fmt.Errorf("budget must be between 50 and 1000")
 	}
-	model, err := TrainScout(corpus)
+	model, err := trainScoutWithPriors(corpus, "", fixedPriors)
 	if err != nil {
 		return ScoutReport{}, err
 	}
@@ -161,6 +354,10 @@ func runScoutReport(corpus ProgramCorpus, budget int, closedLoop bool) (ScoutRep
 	if closedLoop {
 		report.Evaluation = "leave-one-family-out-closed-loop"
 		method = ScoutClosedLoopMethod
+	}
+	if !fixedPriors {
+		report.Evaluation = "leave-one-family-out-prior-free"
+		method = ScoutPriorFreeMethod
 	}
 	modelJSON, err := json.Marshal(model)
 	if err != nil {
@@ -174,7 +371,7 @@ func runScoutReport(corpus ProgramCorpus, budget int, closedLoop bool) (ScoutRep
 			var exists bool
 			rankingModel, exists = foldModels[program.Family]
 			if !exists {
-				rankingModel, err = trainScout(corpus, program.Family)
+				rankingModel, err = trainScoutWithPriors(corpus, program.Family, fixedPriors)
 				if err != nil {
 					return ScoutReport{}, err
 				}
