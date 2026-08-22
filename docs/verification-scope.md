@@ -209,6 +209,9 @@ The current corpus is synthetic.
 The 24 independent benchmark merchants are repository-authored.
 One optional probe executes a pinned external Razorpay webhook handler.
 The external result is not part of the Scout performance report.
+The probe reproduces amount, currency, and order binding failures.
+The no-prior transfer report ranks each mismatch above its matched control.
+This report tests a new implementation of known failure families.
 One genuine Test Mode webhook proves the signed integration path.
 These results do not describe an unknown production traffic distribution.
 

@@ -12,10 +12,10 @@ git -C "$source_dir" fetch --quiet --depth 1 origin "$commit"
 git -C "$source_dir" checkout --quiet --detach FETCH_HEAD
 test "$(git -C "$source_dir" rev-parse HEAD)" = "$commit"
 
-cp "$repo_dir/testkit/external/flexprice/amount_mismatch_test.go.txt" \
+cp "$repo_dir/testkit/external/flexprice/binding_mismatch_test.go.txt" \
 	"$source_dir/internal/integration/razorpay/webhook/paystable_probe_test.go"
 
 cd "$source_dir"
 go test ./internal/integration/razorpay/webhook \
-	-run '^TestPaystableProbeFindsAmountMismatch$' -count=1
-printf '%s\n' 'The external amount mismatch was reproduced.'
+	-run '^TestPaystableProbeFindsBindingMismatches$' -count=1
+printf '%s\n' 'The external binding mismatches were reproduced.'

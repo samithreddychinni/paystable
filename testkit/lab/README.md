@@ -122,6 +122,7 @@ Two currency implementations use the same independent boundary.
 
 Run the optional [external implementation check](../external/README.md) separately.
 The external result is not part of the Scout performance report.
+Run `go run ./testkit/lab external-transfer` after that check.
 
 ## Verify the constrained repair
 

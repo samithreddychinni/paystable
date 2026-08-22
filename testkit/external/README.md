@@ -19,9 +19,24 @@ The command downloads the pinned source and its Go dependencies.
 ```
 
 The probe uses the upstream test fakes and the actual webhook handler.
-The stored payment amount is ₹500.
-The captured event amount is ₹0.01.
-The pinned handler changes the payment state to succeeded.
+The probe starts after webhook signature verification.
+It does not run HTTP routing or an external database.
+The probe checks matched and changed payment bindings.
+It changes the amount, currency, and Razorpay order ID.
+The pinned handler changes all four payment cases to succeeded.
 
-This result reproduces `INV-AMOUNT-1` in one external implementation.
+This result reproduces `INV-AMOUNT-1`, `INV-CURRENCY-1`, and `INV-ORDER-1`.
 It does not measure Scout against a population of external merchants.
+
+Run the implementation-held-out transfer report after the external check:
+
+```bash
+go run ./testkit/lab external-transfer
+```
+
+Scout trains before it loads the six external case profiles.
+The transfer report disables fixed risk priors.
+It reports tie-aware best and worst ranks for three matched pairs.
+The command does not execute the external source again.
+Scout already knows the three mismatch features from its training corpus.
+This report tests implementation transfer, not a new failure family.

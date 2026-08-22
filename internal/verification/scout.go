@@ -92,6 +92,29 @@ type ScoutStressReport struct {
 	AdversarialSummary   BaselineSummary   `json:"adversarial_summary"`
 }
 
+type ExternalTransferReport struct {
+	Version                  int                    `json:"version"`
+	Evaluation               string                 `json:"evaluation"`
+	SourceCommit             string                 `json:"source_commit"`
+	FixedPriors              bool                   `json:"fixed_priors"`
+	ModelBytes               int                    `json:"model_bytes"`
+	Cases                    []ExternalTransferCase `json:"cases"`
+	PairwiseWins             int                    `json:"pairwise_wins"`
+	PairCount                int                    `json:"pair_count"`
+	SuccessAt1               float64                `json:"success_at_1"`
+	SuccessAt3               float64                `json:"success_at_3"`
+	SafeControlsAboveFailure int                    `json:"safe_controls_above_failure"`
+}
+
+type ExternalTransferCase struct {
+	Name              string  `json:"name"`
+	Pair              string  `json:"pair"`
+	ExpectedInvariant string  `json:"expected_invariant,omitempty"`
+	Score             float64 `json:"score"`
+	BestRank          int     `json:"best_rank"`
+	WorstRank         int     `json:"worst_rank"`
+}
+
 // TrainScout fits a linear pairwise ranker to deterministic invariant results.
 func TrainScout(corpus ProgramCorpus) (ScoutModel, error) {
 	return trainScout(corpus, "")
@@ -174,6 +197,71 @@ func RunClosedLoopReport(corpus ProgramCorpus, budget int) (ScoutReport, error) 
 // RunPriorFreeScoutReport evaluates held-out families without fixed risk priors.
 func RunPriorFreeScoutReport(corpus ProgramCorpus, budget int) (ScoutReport, error) {
 	return runScoutReport(corpus, budget, false, false)
+}
+
+func RunExternalTransferReport(corpus ProgramCorpus) (ExternalTransferReport, error) {
+	model, err := trainScoutWithPriors(corpus, "", false)
+	if err != nil {
+		return ExternalTransferReport{}, err
+	}
+	modelJSON, err := json.Marshal(model)
+	if err != nil {
+		return ExternalTransferReport{}, err
+	}
+	type transferInput struct {
+		name, pair, invariant string
+		action                Action
+	}
+	inputs := []transferInput{
+		{"amount mismatch", "amount", InvariantExpectedAmount, Action{Type: "deliver", EventID: "external", Status: "captured", Amount: 1}},
+		{"amount control", "amount", "", Action{Type: "deliver", EventID: "external", Status: "captured", Amount: ExpectedPaymentAmount}},
+		{"currency mismatch", "currency", InvariantExpectedCurrency, Action{Type: "deliver", EventID: "external", Status: "captured", Currency: "USD"}},
+		{"currency control", "currency", "", Action{Type: "deliver", EventID: "external", Status: "captured", Currency: ExpectedPaymentCurrency}},
+		{"order mismatch", "order", InvariantExpectedOrder, Action{Type: "deliver", EventID: "external", Status: "captured", PaymentOrderID: "order_other"}},
+		{"order control", "order", "", Action{Type: "deliver", EventID: "external", Status: "captured"}},
+	}
+	report := ExternalTransferReport{
+		Version: 1, Evaluation: "implementation-held-out-transfer", SourceCommit: "e4b5303fde24581003faf0b05c08feb605c2ef93",
+		FixedPriors: false, ModelBytes: len(modelJSON), PairCount: 3,
+	}
+	for _, input := range inputs {
+		report.Cases = append(report.Cases, ExternalTransferCase{
+			Name: input.name, Pair: input.pair, ExpectedInvariant: input.invariant,
+			Score: model.score([]Action{input.action}),
+		})
+	}
+	for i := range report.Cases {
+		report.Cases[i].BestRank = 1
+		for j := range report.Cases {
+			if report.Cases[j].Score > report.Cases[i].Score {
+				report.Cases[i].BestRank++
+			}
+			if report.Cases[j].Score >= report.Cases[i].Score {
+				report.Cases[i].WorstRank++
+			}
+		}
+		if report.Cases[i].ExpectedInvariant == "" {
+			continue
+		}
+		if report.Cases[i].WorstRank <= 1 {
+			report.SuccessAt1 += 1 / float64(report.PairCount)
+		}
+		if report.Cases[i].WorstRank <= 3 {
+			report.SuccessAt3 += 1 / float64(report.PairCount)
+		}
+		for j := range report.Cases {
+			if report.Cases[j].Pair != report.Cases[i].Pair || report.Cases[j].ExpectedInvariant != "" {
+				continue
+			}
+			if report.Cases[i].Score > report.Cases[j].Score {
+				report.PairwiseWins++
+			}
+			if report.Cases[j].Score > report.Cases[i].Score {
+				report.SafeControlsAboveFailure++
+			}
+		}
+	}
+	return report, nil
 }
 
 // RunPriorFreeStressReport shuffles score ties across repeated held-out trials.

@@ -98,12 +98,34 @@ func TestPriorFreeStressReportIsDeterministic(t *testing.T) {
 	}
 }
 
+func TestExternalTransferRanksEveryMismatchAboveItsControl(t *testing.T) {
+	report, err := RunExternalTransferReport(priorFreeTransferTestCorpus())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.FixedPriors || report.PairwiseWins != report.PairCount || report.SafeControlsAboveFailure != 0 {
+		t.Fatalf("external transfer report failed: %#v", report)
+	}
+}
+
 func priorFreeTestCorpus() ProgramCorpus {
 	full := GenerateProgramCorpus()
 	corpus := ProgramCorpus{Version: full.Version, MaxScheduleActions: full.MaxScheduleActions}
 	for _, program := range full.Programs {
 		switch program.Family {
 		case "payment-amount", "correct-amount", "payment-currency", "correct-currency":
+			corpus.Programs = append(corpus.Programs, program)
+		}
+	}
+	return corpus
+}
+
+func priorFreeTransferTestCorpus() ProgramCorpus {
+	full := GenerateProgramCorpus()
+	corpus := ProgramCorpus{Version: full.Version, MaxScheduleActions: full.MaxScheduleActions}
+	for _, program := range full.Programs {
+		switch program.Family {
+		case "payment-amount", "correct-amount", "payment-order", "correct-order", "payment-currency", "correct-currency":
 			corpus.Programs = append(corpus.Programs, program)
 		}
 	}

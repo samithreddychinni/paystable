@@ -1,0 +1,49 @@
+package webhook
+
+import (
+	"testing"
+
+	"github.com/flexprice/flexprice/internal/types"
+	"github.com/shopspring/decimal"
+)
+
+func TestPaystableProbeFindsBindingMismatches(t *testing.T) {
+	tests := []struct {
+		name     string
+		amount   int64
+		currency string
+		orderID  string
+	}{
+		{"matching payment", 50000, "INR", "order_expected"},
+		{"changed amount", 1, "INR", "order_expected"},
+		{"changed currency", 50000, "USD", "order_expected"},
+		{"changed order", 50000, "INR", "order_other"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			s := new(WebhookCheckoutBranchingSuite)
+			s.SetT(t)
+			s.SetupTest()
+			s.paymentSvc.payment.PaymentMethodType = types.PaymentMethodTypeCard
+			s.paymentSvc.payment.PaymentStatus = types.PaymentStatusPending
+			s.paymentSvc.payment.Amount = decimal.NewFromInt(500)
+			s.paymentSvc.payment.Currency = "INR"
+			expectedOrder := "order_expected"
+			s.paymentSvc.payment.GatewayTrackingID = &expectedOrder
+
+			event := &RazorpayWebhookEvent{Event: string(EventPaymentCaptured)}
+			event.Payload.Payment.Entity.ID = "pay_probe"
+			event.Payload.Payment.Entity.Amount = test.amount
+			event.Payload.Payment.Entity.Currency = test.currency
+			event.Payload.Payment.Entity.OrderID = test.orderID
+			event.Payload.Payment.Entity.Notes = map[string]interface{}{"flexprice_payment_id": "pay_flex_001"}
+
+			if err := s.handler.handlePaymentCaptured(s.ctx, event, s.services); err != nil {
+				t.Fatal(err)
+			}
+			if s.paymentSvc.payment.PaymentStatus != types.PaymentStatusSucceeded {
+				t.Fatal("the handler did not change the payment state to succeeded")
+			}
+		})
+	}
+}
