@@ -17,7 +17,7 @@ type ProgramCase struct {
 
 // GenerateProgramCorpus returns the executable programs and their canonical schedules.
 func GenerateProgramCorpus() ProgramCorpus {
-	return ProgramCorpus{Version: 4, MaxScheduleActions: 4, Programs: []ProgramCase{
+	return ProgramCorpus{Version: 5, MaxScheduleActions: 4, Programs: []ProgramCase{
 		{
 			Family: "deduplication-order", Program: ProgramFulfillBeforeDedup,
 			GroundTruth: Schedule{
@@ -156,6 +156,16 @@ func GenerateProgramCorpus() ProgramCorpus {
 			ExpectedInvariant: InvariantTrustedEventsOnly, ExpectedFinalState: "captured", ExpectedEffectCount: 0,
 		},
 		{
+			Family: "payment-amount", Program: ProgramAcceptWrongAmount,
+			GroundTruth: Schedule{
+				Name: "payment amount mismatch is accepted", Program: ProgramAcceptWrongAmount, OrderID: "order_corpus_amount_1",
+				Actions: []Action{{
+					Type: "deliver", EventID: "event_wrong_amount", Status: "captured", Amount: 1,
+				}},
+			},
+			ExpectedInvariant: InvariantExpectedAmount, ExpectedFinalState: "captured", ExpectedEffectCount: 0,
+		},
+		{
 			Family: "correct", Program: ProgramCorrect,
 			GroundTruth: Schedule{
 				Name: "correct payment handling", Program: ProgramCorrect, OrderID: "order_corpus_8",
@@ -176,6 +186,18 @@ func GenerateProgramCorpus() ProgramCorpus {
 					{Type: "deliver", EventID: "event_untrusted", Status: "captured", Trust: "invalid-signature"},
 					{Type: "deliver", EventID: "event_tampered", Status: "captured", Trust: "tampered-body"},
 					{Type: "deliver", EventID: "event_captured", Status: "captured"},
+					{Type: "fulfill", Response: "ok"},
+				},
+			},
+			ExpectedFinalState: "captured", ExpectedEffectCount: 1,
+		},
+		{
+			Family: "correct-amount", Program: ProgramCorrectAmount,
+			GroundTruth: Schedule{
+				Name: "payment amount mismatch is rejected", Program: ProgramCorrectAmount, OrderID: "order_corpus_amount_2",
+				Actions: []Action{
+					{Type: "deliver", EventID: "event_wrong_amount", Status: "captured", Amount: 1},
+					{Type: "deliver", EventID: "event_captured", Status: "captured", Amount: ExpectedPaymentAmount},
 					{Type: "fulfill", Response: "ok"},
 				},
 			},

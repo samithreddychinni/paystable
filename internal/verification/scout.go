@@ -34,6 +34,7 @@ var scoutFeatureNames = []string{
 	"server_error_count",
 	"untrusted_captured",
 	"parallel_delivery_count",
+	"amount_mismatch_count",
 }
 
 var scoutPriorWeights = map[string]float64{
@@ -42,6 +43,7 @@ var scoutPriorWeights = map[string]float64{
 	"failed_after_captured":            1,
 	"untrusted_captured":               1,
 	"parallel_delivery_count":          1,
+	"amount_mismatch_count":            1,
 }
 
 type ScoutModel struct {
@@ -332,6 +334,9 @@ func scoutFeatures(actions []Action) []float64 {
 			features[1] += float64(copies)
 			if action.Parallel != 0 {
 				features[20]++
+			}
+			if HasAmountMismatch(action) {
+				features[21]++
 			}
 			switch action.Trust {
 			case "missing-signature":

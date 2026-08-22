@@ -149,6 +149,9 @@ func verifyTrace(schedule verification.Schedule, result verification.Result) err
 		if action.Trust != "" && action.Trust != "valid" && schedule.Program == verification.ProgramAcceptUntrusted {
 			want["untrusted_accept"]++
 		}
+		if verification.HasAmountMismatch(action) && schedule.Program == verification.ProgramAcceptWrongAmount {
+			want["amount_mismatch_accept"]++
+		}
 	}
 	got := make(map[string]int)
 	for _, entry := range result.Trace {

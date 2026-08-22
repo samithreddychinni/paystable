@@ -175,6 +175,20 @@ func (a *app) deliver(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "deliver action is not legal", http.StatusBadRequest)
 		return
 	}
+	if verification.HasAmountMismatch(action) && current.program != verification.ProgramAcceptWrongAmount {
+		if err := a.record(r.Context(), "reject", "payment amount mismatch rejected"); err != nil {
+			http.Error(w, "could not record the amount rejection", http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	if verification.HasAmountMismatch(action) {
+		if err := a.record(r.Context(), "amount_mismatch_accept", "payment amount mismatch accepted"); err != nil {
+			http.Error(w, "could not record the amount mismatch", http.StatusInternalServerError)
+			return
+		}
+	}
 	if verification.FulfillsBeforeDedup(current.program, action) && action.Status == "captured" {
 		if err := a.effectBeforeDedup(r, current.orderID); err != nil {
 			http.Error(w, "could not record fulfillment", http.StatusInternalServerError)

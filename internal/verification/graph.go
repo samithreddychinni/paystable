@@ -22,15 +22,16 @@ type BehaviorNode struct {
 }
 
 type BehaviorState struct {
-	Running            bool     `json:"running"`
-	PaymentState       string   `json:"payment_state"`
-	CapturedOnce       bool     `json:"captured_once"`
-	PendingFulfillment bool     `json:"pending_fulfillment"`
-	UntrustedAccepted  bool     `json:"untrusted_accepted"`
-	EffectCount        int      `json:"effect_count"`
-	EffectAttempt      int      `json:"effect_attempt"`
-	SeenEvents         []string `json:"seen_events"`
-	FulfillmentKeys    []string `json:"fulfillment_keys"`
+	Running             bool     `json:"running"`
+	PaymentState        string   `json:"payment_state"`
+	CapturedOnce        bool     `json:"captured_once"`
+	PendingFulfillment  bool     `json:"pending_fulfillment"`
+	UntrustedAccepted   bool     `json:"untrusted_accepted"`
+	WrongAmountAccepted bool     `json:"wrong_amount_accepted"`
+	EffectCount         int      `json:"effect_count"`
+	EffectAttempt       int      `json:"effect_attempt"`
+	SeenEvents          []string `json:"seen_events"`
+	FulfillmentKeys     []string `json:"fulfillment_keys"`
 }
 
 type BehaviorEdge struct {
@@ -52,7 +53,7 @@ func CompileBehaviorGraph(program string, maxActions int) (BehaviorGraph, error)
 		schedule: Schedule{Name: "payment behavior graph", Program: program, OrderID: "order_graph"},
 		running:  true, seen: make(map[string]bool), effects: make(map[string]bool),
 	}
-	graph := BehaviorGraph{Version: 4, Program: program, MaxActions: maxActions}
+	graph := BehaviorGraph{Version: 5, Program: program, MaxActions: maxActions}
 	graph.Nodes = append(graph.Nodes, BehaviorNode{ID: 0, State: behaviorState(initial)})
 	states := []*runner{initial}
 	nodeByState := map[string]int{behaviorStateKey(0, initial): 0}
@@ -99,6 +100,9 @@ func behaviorActions(program string) []Action {
 		{Type: "fulfill", Response: "ok"},
 		{Type: "restart"},
 	}
+	if program == ProgramAcceptWrongAmount || program == ProgramCorrectAmount {
+		actions[0].Amount = ExpectedPaymentAmount
+	}
 	if program == ProgramCorrect || program == ProgramNewKeyOnRetry {
 		actions = slices.Insert(actions, 2, Action{Type: "fulfill", Response: "lost"})
 	}
@@ -109,6 +113,9 @@ func behaviorActions(program string) []Action {
 	}
 	if program == ProgramConcurrentBeforeClaim || program == ProgramCorrectConcurrency {
 		actions = append(actions, Action{Type: "deliver", EventID: "event_parallel", Status: "captured", Parallel: 2})
+	}
+	if program == ProgramAcceptWrongAmount || program == ProgramCorrectAmount {
+		actions = append(actions, Action{Type: "deliver", EventID: "event_wrong_amount", Status: "captured", Amount: 1})
 	}
 	switch program {
 	case ProgramNewKeyOnTimeout, ProgramCorrectNetwork:
@@ -147,7 +154,7 @@ func cloneRunner(source *runner) *runner {
 func behaviorState(r *runner) BehaviorState {
 	state := BehaviorState{
 		Running: r.running, PaymentState: r.state, CapturedOnce: r.capturedOnce,
-		PendingFulfillment: r.pendingEffect, UntrustedAccepted: r.untrusted,
+		PendingFulfillment: r.pendingEffect, UntrustedAccepted: r.untrusted, WrongAmountAccepted: r.wrongAmount,
 		EffectCount: r.effectCount, EffectAttempt: r.effectAttempt,
 		SeenEvents: []string{}, FulfillmentKeys: []string{},
 	}

@@ -94,6 +94,8 @@ jobs:
           go run ./testkit/labexec testkit/lab/scenarios/correct-db-deadlock.json /tmp/correct-db-deadlock.json
           go run ./testkit/labexec testkit/lab/scenarios/retry-overrun.json /tmp/retry-overrun.json INV-RETRY-1
           go run ./testkit/labexec testkit/lab/scenarios/correct-retry-exhaustion.json /tmp/correct-retry-exhaustion.json
+          go run ./testkit/labexec testkit/lab/scenarios/amount-mismatch.json /tmp/amount-mismatch.json INV-AMOUNT-1
+          go run ./testkit/labexec testkit/lab/scenarios/correct-amount.json /tmp/correct-amount.json
       - name: Stop the Docker laboratory
         if: always()
         run: docker compose -f docker-compose.lab.yml down

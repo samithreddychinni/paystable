@@ -63,7 +63,7 @@ go run ./testkit/lab scout 50
 The report includes the final model, evaluation fold models, search runs, and
 the same summary measures as the baselines. Each fold excludes its target
 family from training. Scout starts with payment-risk priors and uses deterministic CPU training.
-The 21-weight model does not require a GPU.
+The 22-weight model does not require a GPU.
 
 ## Run closed-loop Scout
 
@@ -84,7 +84,7 @@ Evaluate all methods against merchant implementations outside the training simul
 go run ./testkit/lab independent 50 7
 ```
 
-The benchmark contains eight vulnerable implementations and eight correct implementations.
+The benchmark contains nine vulnerable implementations and nine correct implementations.
 The random baseline uses 20 consecutive seeds.
 The report includes Wilson 95% intervals for `Success@10`.
 
@@ -139,6 +139,7 @@ output, Compose files, and the dashboard.
 | `new-key-after-db-conflict.json` | `INV-2` |
 | `new-key-after-db-deadlock.json` | `INV-2` |
 | `retry-overrun.json` | `INV-RETRY-1` |
+| `amount-mismatch.json` | `INV-AMOUNT-1` |
 | `stale-terminal-regression.json` | `INV-4` |
 | `correct-terminal.json` | none |
 | `invalid-signature.json` | `INV-SEC-1` |
@@ -148,6 +149,7 @@ output, Compose files, and the dashboard.
 | `correct-db-conflict.json` | none |
 | `correct-db-deadlock.json` | none |
 | `correct-retry-exhaustion.json` | none |
+| `correct-amount.json` | none |
 | `correct-security.json` | none |
 | `correct.json` | none |
 
@@ -173,6 +175,7 @@ Docker runs the same fault contract over HTTP and PostgreSQL.
 3. Check that the artifact contains `"deterministic": true`.
 
 The merchant verifies each raw delivery body before it decodes the JSON.
+The merchant rejects a captured payment when its explicit amount differs from 49900 paise.
 The merchant stores events, payment state, effects, and traces in PostgreSQL.
 The laboratory creates real response timeouts, connection resets, and HTTP 500 responses.
 It also sends concurrent webhooks through competing PostgreSQL transactions.

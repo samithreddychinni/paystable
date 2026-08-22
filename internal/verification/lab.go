@@ -5,29 +5,33 @@ import (
 )
 
 const (
-	ProgramCorrect                 = "correct"
-	ProgramConcurrentBeforeClaim   = "fulfill-before-concurrent-claim"
-	ProgramCorrectConcurrency      = "correct-concurrency"
-	ProgramFulfillBeforeDedup      = "fulfill-before-dedup"
-	ProgramNewKeyOnRetry           = "new-key-on-retry"
-	ProgramNewKeyOnTimeout         = "new-key-on-timeout"
-	ProgramNewKeyOnReset           = "new-key-on-reset"
-	ProgramNewKeyOnServerError     = "new-key-on-server-error"
-	ProgramNewKeyOnDBConflict      = "new-key-on-db-conflict"
-	ProgramNewKeyOnDBDeadlock      = "new-key-on-db-deadlock"
-	ProgramRetryForever            = "retry-forever"
-	ProgramRetryBounded            = "retry-bounded"
-	ProgramTerminalRegression      = "terminal-regression"
-	ProgramTerminalStable          = "terminal-stable"
-	ProgramAcceptUntrusted         = "accept-untrusted-webhook"
-	ProgramCorrectSecurity         = "correct-security"
-	ProgramCorrectNetwork          = "correct-network"
-	ProgramCorrectDBConflict       = "correct-db-conflict"
-	ProgramCorrectDBDeadlock       = "correct-db-deadlock"
-	InvariantFulfillmentAtMostOnce = "INV-2"
-	InvariantTerminalStateStable   = "INV-4"
-	InvariantTrustedEventsOnly     = "INV-SEC-1"
-	InvariantRetryBounded          = "INV-RETRY-1"
+	ProgramCorrect                       = "correct"
+	ProgramConcurrentBeforeClaim         = "fulfill-before-concurrent-claim"
+	ProgramCorrectConcurrency            = "correct-concurrency"
+	ProgramFulfillBeforeDedup            = "fulfill-before-dedup"
+	ProgramNewKeyOnRetry                 = "new-key-on-retry"
+	ProgramNewKeyOnTimeout               = "new-key-on-timeout"
+	ProgramNewKeyOnReset                 = "new-key-on-reset"
+	ProgramNewKeyOnServerError           = "new-key-on-server-error"
+	ProgramNewKeyOnDBConflict            = "new-key-on-db-conflict"
+	ProgramNewKeyOnDBDeadlock            = "new-key-on-db-deadlock"
+	ProgramRetryForever                  = "retry-forever"
+	ProgramRetryBounded                  = "retry-bounded"
+	ProgramTerminalRegression            = "terminal-regression"
+	ProgramTerminalStable                = "terminal-stable"
+	ProgramAcceptUntrusted               = "accept-untrusted-webhook"
+	ProgramCorrectSecurity               = "correct-security"
+	ProgramCorrectNetwork                = "correct-network"
+	ProgramCorrectDBConflict             = "correct-db-conflict"
+	ProgramCorrectDBDeadlock             = "correct-db-deadlock"
+	ProgramAcceptWrongAmount             = "accept-wrong-amount"
+	ProgramCorrectAmount                 = "correct-amount"
+	InvariantFulfillmentAtMostOnce       = "INV-2"
+	InvariantTerminalStateStable         = "INV-4"
+	InvariantTrustedEventsOnly           = "INV-SEC-1"
+	InvariantRetryBounded                = "INV-RETRY-1"
+	InvariantExpectedAmount              = "INV-AMOUNT-1"
+	ExpectedPaymentAmount          int64 = 49900
 )
 
 type Schedule struct {
@@ -45,6 +49,7 @@ type Action struct {
 	Response string `json:"response,omitempty"`
 	Trust    string `json:"trust,omitempty"`
 	Parallel int    `json:"parallel,omitempty"`
+	Amount   int64  `json:"amount,omitempty"`
 }
 
 type TraceEntry struct {
@@ -78,6 +83,7 @@ type runner struct {
 	capturedOnce  bool
 	pendingEffect bool
 	untrusted     bool
+	wrongAmount   bool
 	effects       map[string]bool
 	effectCount   int
 	effectAttempt int
@@ -134,6 +140,13 @@ func ResultFor(schedule Schedule, finalState string, capturedOnce bool, effectCo
 			})
 			break
 		}
+		if entry.Action == "amount_mismatch_accept" {
+			result.Violations = append(result.Violations, Violation{
+				Invariant: InvariantExpectedAmount,
+				Detail:    fmt.Sprintf("order %s accepted a payment amount mismatch", schedule.OrderID),
+			})
+			break
+		}
 	}
 	return result
 }
@@ -158,6 +171,9 @@ func Validate(schedule Schedule) error {
 			if action.Response != "" {
 				return fmt.Errorf("action %d has fields that deliver does not use", i+1)
 			}
+			if action.Amount < 0 {
+				return fmt.Errorf("action %d has an invalid payment amount", i+1)
+			}
 			if action.CrashAt != "" && action.CrashAt != "after_fulfillment" {
 				return fmt.Errorf("action %d has an invalid crash checkpoint", i+1)
 			}
@@ -168,14 +184,14 @@ func Validate(schedule Schedule) error {
 				return fmt.Errorf("action %d cannot combine parallel delivery with a crash", i+1)
 			}
 		case "fulfill":
-			if action.EventID != "" || action.Status != "" || action.CrashAt != "" || action.Trust != "" || action.Parallel != 0 {
+			if action.EventID != "" || action.Status != "" || action.CrashAt != "" || action.Trust != "" || action.Parallel != 0 || action.Amount != 0 {
 				return fmt.Errorf("action %d has fields that fulfill does not use", i+1)
 			}
 			if action.Response != "ok" && action.Response != "lost" && action.Response != "timeout" && action.Response != "connection-reset" && action.Response != "http-500" && action.Response != "db-conflict" && action.Response != "db-deadlock" {
 				return fmt.Errorf("action %d has an invalid fulfillment response", i+1)
 			}
 		case "restart":
-			if action.EventID != "" || action.Status != "" || action.CrashAt != "" || action.Response != "" || action.Trust != "" || action.Parallel != 0 {
+			if action.EventID != "" || action.Status != "" || action.CrashAt != "" || action.Response != "" || action.Trust != "" || action.Parallel != 0 || action.Amount != 0 {
 				return fmt.Errorf("action %d has fields that restart does not use", i+1)
 			}
 		default:
@@ -191,7 +207,8 @@ func supportedProgram(program string) bool {
 		ProgramNewKeyOnReset, ProgramNewKeyOnServerError, ProgramTerminalRegression,
 		ProgramNewKeyOnDBConflict, ProgramNewKeyOnDBDeadlock, ProgramRetryForever, ProgramRetryBounded,
 		ProgramTerminalStable, ProgramAcceptUntrusted, ProgramCorrectSecurity,
-		ProgramCorrectNetwork, ProgramCorrectDBConflict, ProgramCorrectDBDeadlock:
+		ProgramCorrectNetwork, ProgramCorrectDBConflict, ProgramCorrectDBDeadlock,
+		ProgramAcceptWrongAmount, ProgramCorrectAmount:
 		return true
 	}
 	return false
@@ -233,6 +250,14 @@ func (r *runner) deliver(action Action) error {
 		r.untrusted = true
 		r.record("untrusted_accept", "untrusted payment event accepted")
 	}
+	if HasAmountMismatch(action) && r.schedule.Program != ProgramAcceptWrongAmount {
+		r.record("reject", "payment amount mismatch rejected")
+		return nil
+	}
+	if HasAmountMismatch(action) {
+		r.wrongAmount = true
+		r.record("amount_mismatch_accept", "payment amount mismatch accepted")
+	}
 
 	beforeDedup := FulfillsBeforeDedup(r.schedule.Program, action)
 	if beforeDedup && action.Status == "captured" {
@@ -263,6 +288,11 @@ func (r *runner) deliver(action Action) error {
 	}
 	r.record("deliver", "payment state updated")
 	return nil
+}
+
+// HasAmountMismatch reports whether an explicit payment amount differs from the expected amount.
+func HasAmountMismatch(action Action) bool {
+	return action.Amount != 0 && action.Amount != ExpectedPaymentAmount
 }
 
 // FulfillsBeforeDedup reports whether delivery can cause an effect before the event claim.

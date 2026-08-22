@@ -1,0 +1,13 @@
+{
+  "name": "payment amount mismatch is accepted",
+  "program": "accept-wrong-amount",
+  "order_id": "order_amount_1",
+  "actions": [
+    {
+      "type": "deliver",
+      "event_id": "event_wrong_amount",
+      "status": "captured",
+      "amount": 1
+    }
+  ]
+}

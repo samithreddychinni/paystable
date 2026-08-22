@@ -70,7 +70,7 @@ func RunIndependentReport(training ProgramCorpus, budget int, seed int64) (Indep
 		return IndependentReport{}, err
 	}
 	report := IndependentReport{
-		Version: 4, Evaluation: "independent-merchant-implementations",
+		Version: 5, Evaluation: "independent-merchant-implementations",
 		Budget: budget, Seed: seed, ScoutModelBytes: len(modelJSON),
 	}
 	for offset := int64(0); offset < 20; offset++ {
@@ -183,6 +183,7 @@ func independentCases() []independentCase {
 	trustedCaptured := Action{Type: "deliver", EventID: "captured", Status: "captured"}
 	trustedFailed := Action{Type: "deliver", EventID: "failed", Status: "failed"}
 	parallelCaptured := Action{Type: "deliver", EventID: "parallel", Status: "captured", Parallel: 2}
+	wrongAmount := Action{Type: "deliver", EventID: "wrong-amount", Status: "captured", Amount: 1}
 	databaseConflict := Action{Type: "fulfill", Response: "db-conflict"}
 	databaseDeadlock := Action{Type: "fulfill", Response: "db-deadlock"}
 	serverError := Action{Type: "fulfill", Response: "http-500"}
@@ -267,6 +268,16 @@ func independentCases() []independentCase {
 			program: ProgramCase{Program: "external-auth-safe", Family: "correct-authentication"},
 			actions: authActions(trustedCaptured, trustedFailed, fulfillOK),
 			execute: func(schedule Schedule) (Result, error) { return runIndependentAuth(schedule, false) },
+		},
+		{
+			program: ProgramCase{Program: "external-amount-unsafe", Family: "payment-amount", ExpectedInvariant: InvariantExpectedAmount},
+			actions: []Action{trustedCaptured, trustedFailed, wrongAmount, fulfillOK},
+			execute: func(schedule Schedule) (Result, error) { return runIndependentAmount(schedule, true) },
+		},
+		{
+			program: ProgramCase{Program: "external-amount-safe", Family: "correct-amount"},
+			actions: []Action{trustedCaptured, trustedFailed, wrongAmount, fulfillOK},
+			execute: func(schedule Schedule) (Result, error) { return runIndependentAmount(schedule, false) },
 		},
 	}
 }
@@ -638,6 +649,55 @@ func runIndependentAuth(schedule Schedule, unsafe bool) (Result, error) {
 			s.record("fulfill", "fulfillment sink accepted the stable key")
 		default:
 			return Result{}, fmt.Errorf("authentication merchant does not support %s", action.Type)
+		}
+	}
+	return s.result(schedule), nil
+}
+
+func runIndependentAmount(schedule Schedule, unsafe bool) (Result, error) {
+	if err := validateIndependent(schedule); err != nil {
+		return Result{}, err
+	}
+	s := newIndependentState()
+	for _, action := range schedule.Actions {
+		switch action.Type {
+		case "deliver":
+			if !trusted(action) {
+				s.record("reject", "untrusted payment event rejected")
+				continue
+			}
+			if HasAmountMismatch(action) && !unsafe {
+				s.record("reject", "payment amount mismatch rejected")
+				continue
+			}
+			if HasAmountMismatch(action) {
+				s.record("amount_mismatch_accept", "payment amount mismatch accepted")
+			}
+			if s.seen[action.EventID] {
+				s.record("deliver", "duplicate event ignored")
+				continue
+			}
+			s.seen[action.EventID] = true
+			if s.state != "captured" {
+				s.state = action.Status
+			}
+			if s.state == "captured" {
+				s.capturedOnce = true
+				s.pending = true
+			}
+			s.record("deliver", "payment state updated")
+		case "fulfill":
+			if !s.pending {
+				return Result{}, fmt.Errorf("payment is not ready for fulfillment")
+			}
+			if !s.effects[schedule.OrderID] {
+				s.effects[schedule.OrderID] = true
+				s.effectCount++
+			}
+			s.pending = action.Response != "ok"
+			s.record("fulfill", "fulfillment sink accepted the stable key")
+		default:
+			return Result{}, fmt.Errorf("amount merchant does not support %s", action.Type)
 		}
 	}
 	return s.result(schedule), nil
