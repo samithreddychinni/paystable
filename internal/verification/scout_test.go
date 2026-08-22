@@ -134,6 +134,10 @@ func TestReplayWindowChallengeExposesScoutBlindSpot(t *testing.T) {
 }
 
 func TestReplayScoutV3RanksHeldOutDelays(t *testing.T) {
+	invalid := replayWindowSchedule("invalid clock skew", ProgramExpiringEventClaim, 3600, MaxClockSkewSeconds+1, false)
+	if Validate(invalid) == nil {
+		t.Fatal("clock skew above the limit passed validation")
+	}
 	first, err := RunReplayV3Report(GenerateProgramCorpus())
 	if err != nil {
 		t.Fatal(err)

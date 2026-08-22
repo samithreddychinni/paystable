@@ -221,11 +221,12 @@ Scout gives its failure and matched safe delay the same score.
 This negative result identifies an unmodeled time feature.
 Scout v3 adds one normalized replay-delay feature.
 It trains this feature on nine invariant-labeled pairs without fixed priors.
-Its report uses unseen delay values, two boundary margins, and sequence noise.
+Its report uses unseen delay values, clock offsets, and sequence noise.
 Scout v2 ties all three pairs, while Scout v3 ranks all three failures higher.
 The Scout v3 model is 1,045 bytes, and each correct control has no violation.
-This report uses an in-process clock and one simulated retention policy.
-It does not test database cleanup or system clock skew.
+The container laboratory stores event claims and fulfillment effects in PostgreSQL.
+Its cleanup query uses an injected database clock offset.
+The test does not change the operating system clock or run a production scheduler.
 One genuine Test Mode webhook proves the signed integration path.
 These results do not describe an unknown production traffic distribution.
 

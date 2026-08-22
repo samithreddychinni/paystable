@@ -152,6 +152,8 @@ type ReplayV3Case struct {
 	Name                     string  `json:"name"`
 	SafeDelaySeconds         int64   `json:"safe_delay_seconds"`
 	FailureDelaySeconds      int64   `json:"failure_delay_seconds"`
+	SafeClockSkewSeconds     int64   `json:"safe_clock_skew_seconds"`
+	FailureClockSkewSeconds  int64   `json:"failure_clock_skew_seconds"`
 	SequenceNoise            bool    `json:"sequence_noise"`
 	SafeScore                float64 `json:"safe_score"`
 	FailureScore             float64 `json:"failure_score"`
@@ -321,9 +323,9 @@ func RunReplayWindowReport(corpus ProgramCorpus) (ReplayWindowReport, error) {
 	if err != nil {
 		return ReplayWindowReport{}, err
 	}
-	failureSchedule := replayWindowSchedule("expired event claim accepts a replay", ProgramExpiringEventClaim, EventClaimRetentionSeconds+1, false)
-	safeSchedule := replayWindowSchedule("active event claim rejects a replay", ProgramExpiringEventClaim, 3600, false)
-	correctSchedule := replayWindowSchedule("durable event claim rejects a delayed replay", ProgramDurableEventClaim, EventClaimRetentionSeconds+1, false)
+	failureSchedule := replayWindowSchedule("expired event claim accepts a replay", ProgramExpiringEventClaim, EventClaimRetentionSeconds+1, 0, false)
+	safeSchedule := replayWindowSchedule("active event claim rejects a replay", ProgramExpiringEventClaim, 3600, 0, false)
+	correctSchedule := replayWindowSchedule("durable event claim rejects a delayed replay", ProgramDurableEventClaim, EventClaimRetentionSeconds+1, 0, false)
 	failure, err := Run(failureSchedule)
 	if err != nil {
 		return ReplayWindowReport{}, err
@@ -377,13 +379,14 @@ func RunReplayV3Report(corpus ProgramCorpus) (ReplayV3Report, error) {
 		return ReplayV3Report{}, err
 	}
 	tests := []struct {
-		name          string
-		safe, failure int64
-		noise         bool
+		name                  string
+		safe, failure         int64
+		safeSkew, failureSkew int64
+		noise                 bool
 	}{
-		{"near boundary", EventClaimRetentionSeconds - 1, EventClaimRetentionSeconds + 1, false},
-		{"boundary margin", EventClaimRetentionSeconds - 600, EventClaimRetentionSeconds + 600, false},
-		{"sequence noise", 64800, 259200, true},
+		{"near boundary", EventClaimRetentionSeconds - 1, EventClaimRetentionSeconds + 1, 0, 0, false},
+		{"clock skew", EventClaimRetentionSeconds + 600, EventClaimRetentionSeconds - 600, -1200, 1200, false},
+		{"sequence noise", 64800, 259200, 0, 0, true},
 	}
 	report := ReplayV3Report{
 		Version: 1, Evaluation: "held-out-replay-retention-v3", FixedPriors: false,
@@ -392,9 +395,9 @@ func RunReplayV3Report(corpus ProgramCorpus) (ReplayV3Report, error) {
 		BaseModelBytes: len(baseJSON), ModelBytes: len(modelJSON), Model: model, PairCount: len(tests),
 	}
 	for _, test := range tests {
-		failureSchedule := replayWindowSchedule(test.name+" failure", ProgramExpiringEventClaim, test.failure, test.noise)
-		safeSchedule := replayWindowSchedule(test.name+" control", ProgramExpiringEventClaim, test.safe, test.noise)
-		correctSchedule := replayWindowSchedule(test.name+" correct control", ProgramDurableEventClaim, test.failure, test.noise)
+		failureSchedule := replayWindowSchedule(test.name+" failure", ProgramExpiringEventClaim, test.failure, test.failureSkew, test.noise)
+		safeSchedule := replayWindowSchedule(test.name+" control", ProgramExpiringEventClaim, test.safe, test.safeSkew, test.noise)
+		correctSchedule := replayWindowSchedule(test.name+" correct control", ProgramDurableEventClaim, test.failure, test.failureSkew, test.noise)
 		failure, err := Run(failureSchedule)
 		if err != nil {
 			return ReplayV3Report{}, err
@@ -430,6 +433,7 @@ func RunReplayV3Report(corpus ProgramCorpus) (ReplayV3Report, error) {
 		}
 		report.Cases = append(report.Cases, ReplayV3Case{
 			Name: test.name, SafeDelaySeconds: test.safe, FailureDelaySeconds: test.failure,
+			SafeClockSkewSeconds: test.safeSkew, FailureClockSkewSeconds: test.failureSkew,
 			SequenceNoise: test.noise, SafeScore: safeScore, FailureScore: failureScore,
 			PairwiseWin: pairwiseWin, BaseScoresTied: baseTied,
 			DeterministicReplay: reflect.DeepEqual(failure, repeated), ReducedActions: len(reduced.Actions),
@@ -439,10 +443,10 @@ func RunReplayV3Report(corpus ProgramCorpus) (ReplayV3Report, error) {
 	return report, nil
 }
 
-func replayWindowSchedule(name, program string, seconds int64, noise bool) Schedule {
+func replayWindowSchedule(name, program string, seconds, skew int64, noise bool) Schedule {
 	actions := []Action{
 		{Type: "deliver", EventID: "event_replay", Status: "captured"},
-		{Type: "advance", AdvanceSeconds: seconds},
+		{Type: "advance", AdvanceSeconds: seconds, ClockSkewSeconds: skew},
 	}
 	if noise {
 		actions = append(actions, Action{Type: "deliver", EventID: "event_noise", Status: "failed"})
@@ -465,7 +469,7 @@ func trainReplayScoutV3(corpus ProgramCorpus) (ScoutModel, ScoutModel, []int64, 
 	type pair struct{ positive, negative []float64 }
 	var positives, negatives [][]float64
 	for _, delay := range append(slices.Clone(safeDelays), failureDelays...) {
-		schedule := replayWindowSchedule("Scout v3 training schedule", ProgramExpiringEventClaim, delay, false)
+		schedule := replayWindowSchedule("Scout v3 training schedule", ProgramExpiringEventClaim, delay, 0, false)
 		result, err := Run(schedule)
 		if err != nil {
 			return ScoutModel{}, ScoutModel{}, nil, nil, 0, err
@@ -505,7 +509,7 @@ func scoutV3Features(actions []Action) []float64 {
 	var elapsed int64
 	for _, action := range actions {
 		if action.Type == "advance" {
-			elapsed += action.AdvanceSeconds
+			elapsed += action.AdvanceSeconds + action.ClockSkewSeconds
 			continue
 		}
 		if action.Type != "deliver" {

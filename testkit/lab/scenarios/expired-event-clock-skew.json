@@ -1,0 +1,10 @@
+{
+  "name": "positive clock skew expires an event claim",
+  "program": "expire-event-claim",
+  "order_id": "order_clock_skew",
+  "actions": [
+    {"type": "deliver", "event_id": "event_clock_skew", "status": "captured"},
+    {"type": "advance", "advance_seconds": 85800, "clock_skew_seconds": 1200},
+    {"type": "deliver", "event_id": "event_clock_skew", "status": "captured"}
+  ]
+}

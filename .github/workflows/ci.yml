@@ -100,6 +100,10 @@ jobs:
           go run ./testkit/labexec testkit/lab/scenarios/correct-order.json /tmp/correct-order.json
           go run ./testkit/labexec testkit/lab/scenarios/currency-mismatch.json /tmp/currency-mismatch.json INV-CURRENCY-1
           go run ./testkit/labexec testkit/lab/scenarios/correct-currency.json /tmp/correct-currency.json
+          go run ./testkit/labexec testkit/lab/scenarios/expired-event-replay.json /tmp/expired-event-replay.json INV-2
+          go run ./testkit/labexec testkit/lab/scenarios/correct-durable-replay.json /tmp/correct-durable-replay.json
+          go run ./testkit/labexec testkit/lab/scenarios/expired-event-clock-skew.json /tmp/expired-event-clock-skew.json INV-2
+          go run ./testkit/labexec testkit/lab/scenarios/active-event-clock-skew.json /tmp/active-event-clock-skew.json
       - name: Stop the Docker laboratory
         if: always()
         run: docker compose -f docker-compose.lab.yml down

@@ -29,11 +29,13 @@ CREATE TABLE IF NOT EXISTS lab_state (
     captured_once boolean NOT NULL DEFAULT false,
     pending_effect boolean NOT NULL DEFAULT false,
     effect_attempt integer NOT NULL DEFAULT 0,
-    trace_sequence integer NOT NULL DEFAULT 0
+    trace_sequence integer NOT NULL DEFAULT 0,
+    clock_offset_seconds bigint NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS lab_events (
     event_id text PRIMARY KEY,
-    status text NOT NULL
+    status text NOT NULL,
+    claimed_at timestamptz NOT NULL DEFAULT clock_timestamp()
 );
 CREATE TABLE IF NOT EXISTS lab_effects (
     effect_key text PRIMARY KEY,
@@ -45,7 +47,9 @@ CREATE TABLE IF NOT EXISTS lab_trace (
     detail text NOT NULL,
     state text NOT NULL,
     effect_count integer NOT NULL
-);`
+);
+ALTER TABLE lab_state ADD COLUMN IF NOT EXISTS clock_offset_seconds bigint NOT NULL DEFAULT 0;
+ALTER TABLE lab_events ADD COLUMN IF NOT EXISTS claimed_at timestamptz NOT NULL DEFAULT clock_timestamp();`
 
 type app struct {
 	db            *sql.DB
@@ -60,6 +64,7 @@ type state struct {
 	capturedOnce  bool
 	pendingEffect bool
 	effectAttempt int
+	clockOffset   int64
 }
 
 func main() {
@@ -96,6 +101,7 @@ func main() {
 	mux.HandleFunc("POST /reset", a.reset)
 	mux.HandleFunc("POST /deliver", a.deliver)
 	mux.HandleFunc("POST /fulfill", a.fulfill)
+	mux.HandleFunc("POST /advance", a.advance)
 	mux.HandleFunc("GET /result", a.result)
 
 	port := envOr("PORT", "9093")
@@ -284,7 +290,10 @@ func (a *app) storeEvent(r *http.Request, action verification.Action, untrusted 
 			return err
 		}
 	}
-	if _, err := tx.ExecContext(r.Context(), `INSERT INTO lab_events (event_id, status) VALUES ($1, $2)`, action.EventID, action.Status); err != nil {
+	if _, err := tx.ExecContext(r.Context(), `
+		INSERT INTO lab_events (event_id, status, claimed_at)
+		VALUES ($1, $2, clock_timestamp() + ($3::bigint * interval '1 second'))`,
+		action.EventID, action.Status, current.clockOffset); err != nil {
 		return err
 	}
 	if err := recordTx(r.Context(), tx, "checkpoint", "event stored at after_deduplication"); err != nil {
@@ -298,6 +307,10 @@ func (a *app) storeEvent(r *http.Request, action verification.Action, untrusted 
 	if current.paymentState != "captured" && newState == "captured" && action.Status == "captured" && !verification.FulfillsBeforeDedup(current.program, action) {
 		pending = true
 	}
+	replayProgram := current.program == verification.ProgramExpiringEventClaim || current.program == verification.ProgramDurableEventClaim
+	if replayProgram && action.Status == "captured" {
+		pending = false
+	}
 	if _, err := tx.ExecContext(r.Context(), `
 		UPDATE lab_state SET payment_state=$1, captured_once=captured_once OR $2, pending_effect=$3`,
 		newState, newState == "captured", pending); err != nil {
@@ -306,7 +319,78 @@ func (a *app) storeEvent(r *http.Request, action verification.Action, untrusted 
 	if err := recordTx(r.Context(), tx, "deliver", "payment state updated"); err != nil {
 		return err
 	}
+	if replayProgram && action.Status == "captured" {
+		if _, err := tx.ExecContext(r.Context(), `
+			INSERT INTO lab_effects (effect_key, order_id) VALUES ('event:' || txid_current()::text, $1)`, current.orderID); err != nil {
+			return err
+		}
+		if err := recordTx(r.Context(), tx, "fulfill", "accepted payment event caused fulfillment"); err != nil {
+			return err
+		}
+	}
 	return tx.Commit()
+}
+
+func (a *app) advance(w http.ResponseWriter, r *http.Request) {
+	var action verification.Action
+	if !decodeJSON(w, r, &action, "advance action") {
+		return
+	}
+	current, err := a.loadState(r)
+	if err != nil {
+		http.Error(w, "laboratory state is not ready", http.StatusConflict)
+		return
+	}
+	if action.Type != "advance" || verification.Validate(verification.Schedule{
+		Name: current.scenario, Program: current.program, OrderID: current.orderID, Actions: []verification.Action{action},
+	}) != nil {
+		http.Error(w, "advance action is not legal", http.StatusBadRequest)
+		return
+	}
+	tx, err := a.db.BeginTx(r.Context(), nil)
+	if err != nil {
+		http.Error(w, "could not start the clock advance", http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback()
+	effectiveAdvance := action.AdvanceSeconds + action.ClockSkewSeconds
+	var offset int64
+	if err := tx.QueryRowContext(r.Context(), `
+		UPDATE lab_state SET clock_offset_seconds=clock_offset_seconds+$1
+		WHERE singleton=true RETURNING clock_offset_seconds`, effectiveAdvance).Scan(&offset); err != nil {
+		http.Error(w, "could not update the test clock", http.StatusInternalServerError)
+		return
+	}
+	if err := recordTx(r.Context(), tx, "advance", fmt.Sprintf("database clock advanced by %d seconds with %d seconds of skew", action.AdvanceSeconds, action.ClockSkewSeconds)); err != nil {
+		http.Error(w, "could not record the clock advance", http.StatusInternalServerError)
+		return
+	}
+	if current.program == verification.ProgramExpiringEventClaim {
+		result, err := tx.ExecContext(r.Context(), `
+			DELETE FROM lab_events
+			WHERE claimed_at < clock_timestamp() + ($1::bigint * interval '1 second')
+				- ($2::bigint * interval '1 second')`, offset, verification.EventClaimRetentionSeconds)
+		if err != nil {
+			http.Error(w, "could not expire event claims", http.StatusInternalServerError)
+			return
+		}
+		count, err := result.RowsAffected()
+		if err != nil {
+			http.Error(w, "could not count expired event claims", http.StatusInternalServerError)
+			return
+		}
+		if count != 0 {
+			if err := recordTx(r.Context(), tx, "expire", fmt.Sprintf("%d event claims expired", count)); err != nil {
+				http.Error(w, "could not record expired event claims", http.StatusInternalServerError)
+				return
+			}
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		http.Error(w, "could not commit the clock advance", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (a *app) fulfill(w http.ResponseWriter, r *http.Request) {
@@ -578,19 +662,19 @@ func (a *app) result(w http.ResponseWriter, r *http.Request) {
 func (a *app) loadState(r *http.Request) (state, error) {
 	var current state
 	err := a.db.QueryRowContext(r.Context(), `
-		SELECT scenario, program, order_id, payment_state, captured_once, pending_effect, effect_attempt FROM lab_state WHERE singleton=true`).Scan(
+		SELECT scenario, program, order_id, payment_state, captured_once, pending_effect, effect_attempt, clock_offset_seconds FROM lab_state WHERE singleton=true`).Scan(
 		&current.scenario, &current.program, &current.orderID, &current.paymentState,
-		&current.capturedOnce, &current.pendingEffect, &current.effectAttempt)
+		&current.capturedOnce, &current.pendingEffect, &current.effectAttempt, &current.clockOffset)
 	return current, err
 }
 
 func loadStateTx(r *http.Request, tx *sql.Tx) (state, error) {
 	var current state
 	err := tx.QueryRowContext(r.Context(), `
-		SELECT scenario, program, order_id, payment_state, captured_once, pending_effect, effect_attempt
+		SELECT scenario, program, order_id, payment_state, captured_once, pending_effect, effect_attempt, clock_offset_seconds
 		FROM lab_state WHERE singleton=true FOR UPDATE`).Scan(
 		&current.scenario, &current.program, &current.orderID, &current.paymentState,
-		&current.capturedOnce, &current.pendingEffect, &current.effectAttempt)
+		&current.capturedOnce, &current.pendingEffect, &current.effectAttempt, &current.clockOffset)
 	return current, err
 }
 

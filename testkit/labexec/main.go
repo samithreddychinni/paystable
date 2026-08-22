@@ -114,6 +114,10 @@ func (e *executor) run(schedule verification.Schedule) (verification.Result, err
 					return verification.Result{}, err
 				}
 			}
+		case "advance":
+			if err := e.post("/advance", action, ""); err != nil {
+				return verification.Result{}, fmt.Errorf("action %d: %w", i+1, err)
+			}
 		case "restart":
 			if !stopped {
 				return verification.Result{}, fmt.Errorf("action %d restarts a running merchant", i+1)
@@ -140,6 +144,9 @@ func (e *executor) run(schedule verification.Schedule) (verification.Result, err
 func verifyTrace(schedule verification.Schedule, result verification.Result) error {
 	want := make(map[string]int)
 	for _, action := range schedule.Actions {
+		if action.Type == "advance" {
+			want["advance"]++
+		}
 		if action.CrashAt != "" {
 			want["crash"]++
 		}

@@ -132,8 +132,8 @@ Scout v2 ties all three pairs.
 Scout v3 ranks all three failure delays above their controls.
 The Scout v3 model is 1,045 bytes.
 The deterministic invariant remains the finding authority.
-The report uses the in-process test clock and one simulated retention policy.
-It does not test a database cleanup job or system clock skew.
+The Scout report uses the in-process test clock and one retention policy.
+The PostgreSQL schedules below test cleanup with injected clock offsets.
 
 ## Run the independent benchmark
 
@@ -226,6 +226,8 @@ output, Compose files, and the dashboard.
 | `correct.json` | none |
 | `expired-event-replay.json` | `INV-2` |
 | `correct-durable-replay.json` | none |
+| `expired-event-clock-skew.json` | `INV-2` |
+| `active-event-clock-skew.json` | none |
 
 The command-line search runs inside one process.
 Docker runs the same fault contract over HTTP and PostgreSQL.
@@ -259,6 +261,25 @@ It creates a real PostgreSQL serialization failure after a fulfillment effect.
 It also creates a real PostgreSQL deadlock after a fulfillment effect.
 The retry-limit schedules use one stable fulfillment key.
 Docker restarts the merchant after each named crash or lost response.
+The replay schedules store event claims and effects in PostgreSQL.
+The advance action changes a database clock offset without waiting one day.
+The cleanup query expires event claims against the effective database clock.
+
+Run the PostgreSQL replay and clock-skew schedules:
+
+```bash
+go run ./testkit/labexec \
+  testkit/lab/scenarios/expired-event-replay.json \
+  artifacts/lab/expired-event-replay.json \
+  INV-2
+go run ./testkit/labexec \
+  testkit/lab/scenarios/expired-event-clock-skew.json \
+  artifacts/lab/expired-event-clock-skew.json \
+  INV-2
+go run ./testkit/labexec \
+  testkit/lab/scenarios/active-event-clock-skew.json \
+  artifacts/lab/active-event-clock-skew.json
+```
 
 4. Reduce a failing schedule to a 1-minimal schedule:
 

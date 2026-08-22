@@ -1,0 +1,104 @@
+{
+  "version": 1,
+  "schedule": {
+    "name": "positive clock skew expires an event claim",
+    "program": "expire-event-claim",
+    "order_id": "order_clock_skew",
+    "actions": [
+      {
+        "type": "deliver",
+        "event_id": "event_clock_skew",
+        "status": "captured"
+      },
+      {
+        "type": "advance",
+        "advance_seconds": 85800,
+        "clock_skew_seconds": 1200
+      },
+      {
+        "type": "deliver",
+        "event_id": "event_clock_skew",
+        "status": "captured"
+      }
+    ]
+  },
+  "deterministic": true,
+  "executions": 2,
+  "result": {
+    "scenario": "positive clock skew expires an event claim",
+    "program": "expire-event-claim",
+    "final_state": "captured",
+    "effect_count": 2,
+    "violations": [
+      {
+        "invariant": "INV-2",
+        "detail": "order order_clock_skew produced 2 fulfillment effects"
+      }
+    ],
+    "trace": [
+      {
+        "sequence": 1,
+        "action": "checkpoint",
+        "detail": "event stored at after_deduplication",
+        "state": "",
+        "effect_count": 0
+      },
+      {
+        "sequence": 2,
+        "action": "deliver",
+        "detail": "payment state updated",
+        "state": "captured",
+        "effect_count": 0
+      },
+      {
+        "sequence": 3,
+        "action": "fulfill",
+        "detail": "accepted payment event caused fulfillment",
+        "state": "captured",
+        "effect_count": 1
+      },
+      {
+        "sequence": 4,
+        "action": "advance",
+        "detail": "database clock advanced by 85800 seconds with 1200 seconds of skew",
+        "state": "captured",
+        "effect_count": 1
+      },
+      {
+        "sequence": 5,
+        "action": "expire",
+        "detail": "1 event claims expired",
+        "state": "captured",
+        "effect_count": 1
+      },
+      {
+        "sequence": 6,
+        "action": "checkpoint",
+        "detail": "event stored at after_deduplication",
+        "state": "captured",
+        "effect_count": 1
+      },
+      {
+        "sequence": 7,
+        "action": "deliver",
+        "detail": "payment state updated",
+        "state": "captured",
+        "effect_count": 1
+      },
+      {
+        "sequence": 8,
+        "action": "fulfill",
+        "detail": "accepted payment event caused fulfillment",
+        "state": "captured",
+        "effect_count": 2
+      }
+    ]
+  },
+  "reduction": {
+    "invariant": "INV-2",
+    "original_action_count": 3,
+    "reduced_action_count": 3,
+    "candidate_executions": 3,
+    "removed_actions": []
+  }
+}

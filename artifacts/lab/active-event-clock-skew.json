@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "schedule": {
+    "name": "negative clock skew keeps an event claim active",
+    "program": "expire-event-claim",
+    "order_id": "order_clock_skew",
+    "actions": [
+      {
+        "type": "deliver",
+        "event_id": "event_clock_skew",
+        "status": "captured"
+      },
+      {
+        "type": "advance",
+        "advance_seconds": 87000,
+        "clock_skew_seconds": -1200
+      },
+      {
+        "type": "deliver",
+        "event_id": "event_clock_skew",
+        "status": "captured"
+      }
+    ]
+  },
+  "deterministic": true,
+  "executions": 2,
+  "result": {
+    "scenario": "negative clock skew keeps an event claim active",
+    "program": "expire-event-claim",
+    "final_state": "captured",
+    "effect_count": 1,
+    "violations": [],
+    "trace": [
+      {
+        "sequence": 1,
+        "action": "checkpoint",
+        "detail": "event stored at after_deduplication",
+        "state": "",
+        "effect_count": 0
+      },
+      {
+        "sequence": 2,
+        "action": "deliver",
+        "detail": "payment state updated",
+        "state": "captured",
+        "effect_count": 0
+      },
+      {
+        "sequence": 3,
+        "action": "fulfill",
+        "detail": "accepted payment event caused fulfillment",
+        "state": "captured",
+        "effect_count": 1
+      },
+      {
+        "sequence": 4,
+        "action": "advance",
+        "detail": "database clock advanced by 87000 seconds with -1200 seconds of skew",
+        "state": "captured",
+        "effect_count": 1
+      },
+      {
+        "sequence": 5,
+        "action": "deliver",
+        "detail": "duplicate event ignored",
+        "state": "captured",
+        "effect_count": 1
+      }
+    ]
+  }
+}
