@@ -1,0 +1,10 @@
+{
+  "name": "expired event claim accepts a replay",
+  "program": "expire-event-claim",
+  "order_id": "order_replay_window",
+  "actions": [
+    {"type": "deliver", "event_id": "event_replay", "status": "captured"},
+    {"type": "advance", "advance_seconds": 86401},
+    {"type": "deliver", "event_id": "event_replay", "status": "captured"}
+  ]
+}

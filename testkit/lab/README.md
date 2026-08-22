@@ -103,6 +103,20 @@ weights. The invariant checks remain the only finding authority.
 Scout also ranks unseen input profiles before repeated profiles.
 This rule uses schedule features only. It does not use hidden result labels.
 
+## Measure an unseen replay window
+
+Run the replay-window challenge:
+
+```bash
+go run ./testkit/lab replay-window
+```
+
+The report trains Scout without fixed priors before it creates the challenge.
+An expired event claim permits a delayed replay and causes duplicate fulfillment.
+A durable event claim rejects the same replay.
+Scout gives the failure and its matched safe delay the same score.
+This negative result identifies a feature gap before retraining.
+
 ## Run the independent benchmark
 
 Evaluate all methods against merchant implementations outside the training simulator:
@@ -192,6 +206,8 @@ output, Compose files, and the dashboard.
 | `correct-currency.json` | none |
 | `correct-security.json` | none |
 | `correct.json` | none |
+| `expired-event-replay.json` | `INV-2` |
+| `correct-durable-replay.json` | none |
 
 The command-line search runs inside one process.
 Docker runs the same fault contract over HTTP and PostgreSQL.

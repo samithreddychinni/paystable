@@ -108,6 +108,31 @@ func TestExternalTransferRanksEveryMismatchAboveItsControl(t *testing.T) {
 	}
 }
 
+func TestReplayWindowChallengeExposesScoutBlindSpot(t *testing.T) {
+	report, err := RunReplayWindowReport(GenerateProgramCorpus())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.FailureInvariant != InvariantFulfillmentAtMostOnce || !report.DeterministicReplay || report.CorrectControlViolations != 0 || report.ReducedActions != report.OriginalActions {
+		t.Fatalf("replay-window result is invalid: %#v", report)
+	}
+	if !report.ScoresTied || !report.SameFeatureProfile {
+		t.Fatalf("Scout unexpectedly distinguished the unseen replay window: %#v", report)
+	}
+	graph, err := CompileBehaviorGraph(ProgramExpiringEventClaim, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := []Action{
+		{Type: "deliver", EventID: "event_replay", Status: "captured"},
+		{Type: "advance", AdvanceSeconds: EventClaimRetentionSeconds + 1},
+		{Type: "deliver", EventID: "event_replay", Status: "captured"},
+	}
+	if !graphContainsPath(graph, path) {
+		t.Fatal("replay-window graph does not contain the failure path")
+	}
+}
+
 func priorFreeTestCorpus() ProgramCorpus {
 	full := GenerateProgramCorpus()
 	corpus := ProgramCorpus{Version: full.Version, MaxScheduleActions: full.MaxScheduleActions}

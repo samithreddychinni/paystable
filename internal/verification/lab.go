@@ -30,6 +30,8 @@ const (
 	ProgramCorrectOrder                  = "correct-order"
 	ProgramAcceptWrongCurrency           = "accept-wrong-currency"
 	ProgramCorrectCurrency               = "correct-currency"
+	ProgramExpiringEventClaim            = "expire-event-claim"
+	ProgramDurableEventClaim             = "durable-event-claim"
 	InvariantFulfillmentAtMostOnce       = "INV-2"
 	InvariantTerminalStateStable         = "INV-4"
 	InvariantTrustedEventsOnly           = "INV-SEC-1"
@@ -39,6 +41,8 @@ const (
 	InvariantExpectedCurrency            = "INV-CURRENCY-1"
 	ExpectedPaymentAmount          int64 = 49900
 	ExpectedPaymentCurrency              = "INR"
+	EventClaimRetentionSeconds     int64 = 86400
+	MaxAdvanceSeconds              int64 = 604800
 )
 
 type Schedule struct {
@@ -59,6 +63,7 @@ type Action struct {
 	Amount         int64  `json:"amount,omitempty"`
 	PaymentOrderID string `json:"payment_order_id,omitempty"`
 	Currency       string `json:"currency,omitempty"`
+	AdvanceSeconds int64  `json:"advance_seconds,omitempty"`
 }
 
 type TraceEntry struct {
@@ -196,6 +201,9 @@ func Validate(schedule Schedule) error {
 			if action.Response != "" {
 				return fmt.Errorf("action %d has fields that deliver does not use", i+1)
 			}
+			if action.AdvanceSeconds != 0 {
+				return fmt.Errorf("action %d has fields that deliver does not use", i+1)
+			}
 			if action.Amount < 0 {
 				return fmt.Errorf("action %d has an invalid payment amount", i+1)
 			}
@@ -209,15 +217,22 @@ func Validate(schedule Schedule) error {
 				return fmt.Errorf("action %d cannot combine parallel delivery with a crash", i+1)
 			}
 		case "fulfill":
-			if action.EventID != "" || action.Status != "" || action.CrashAt != "" || action.Trust != "" || action.Parallel != 0 || action.Amount != 0 || action.PaymentOrderID != "" || action.Currency != "" {
+			if action.EventID != "" || action.Status != "" || action.CrashAt != "" || action.Trust != "" || action.Parallel != 0 || action.Amount != 0 || action.PaymentOrderID != "" || action.Currency != "" || action.AdvanceSeconds != 0 {
 				return fmt.Errorf("action %d has fields that fulfill does not use", i+1)
 			}
 			if action.Response != "ok" && action.Response != "lost" && action.Response != "timeout" && action.Response != "connection-reset" && action.Response != "http-500" && action.Response != "db-conflict" && action.Response != "db-deadlock" {
 				return fmt.Errorf("action %d has an invalid fulfillment response", i+1)
 			}
 		case "restart":
-			if action.EventID != "" || action.Status != "" || action.CrashAt != "" || action.Response != "" || action.Trust != "" || action.Parallel != 0 || action.Amount != 0 || action.PaymentOrderID != "" || action.Currency != "" {
+			if action.EventID != "" || action.Status != "" || action.CrashAt != "" || action.Response != "" || action.Trust != "" || action.Parallel != 0 || action.Amount != 0 || action.PaymentOrderID != "" || action.Currency != "" || action.AdvanceSeconds != 0 {
 				return fmt.Errorf("action %d has fields that restart does not use", i+1)
+			}
+		case "advance":
+			if action.EventID != "" || action.Status != "" || action.CrashAt != "" || action.Response != "" || action.Trust != "" || action.Parallel != 0 || action.Amount != 0 || action.PaymentOrderID != "" || action.Currency != "" {
+				return fmt.Errorf("action %d has fields that advance does not use", i+1)
+			}
+			if action.AdvanceSeconds < 1 || action.AdvanceSeconds > MaxAdvanceSeconds {
+				return fmt.Errorf("action %d has an invalid clock advance", i+1)
 			}
 		default:
 			return fmt.Errorf("action %d has unsupported type %q", i+1, action.Type)
@@ -234,7 +249,7 @@ func supportedProgram(program string) bool {
 		ProgramTerminalStable, ProgramAcceptUntrusted, ProgramCorrectSecurity,
 		ProgramCorrectNetwork, ProgramCorrectDBConflict, ProgramCorrectDBDeadlock,
 		ProgramAcceptWrongAmount, ProgramCorrectAmount, ProgramAcceptWrongOrder, ProgramCorrectOrder,
-		ProgramAcceptWrongCurrency, ProgramCorrectCurrency:
+		ProgramAcceptWrongCurrency, ProgramCorrectCurrency, ProgramExpiringEventClaim, ProgramDurableEventClaim:
 		return true
 	}
 	return false
@@ -259,6 +274,12 @@ func (r *runner) run(action Action) error {
 		return nil
 	case "fulfill":
 		return r.fulfill(action)
+	case "advance":
+		r.record("advance", fmt.Sprintf("test clock advanced by %d seconds", action.AdvanceSeconds))
+		if r.schedule.Program == ProgramExpiringEventClaim && action.AdvanceSeconds > EventClaimRetentionSeconds {
+			clear(r.seen)
+			r.record("expire", "event claims expired")
+		}
 	}
 	return nil
 }
@@ -329,6 +350,10 @@ func (r *runner) deliver(action Action) error {
 		}
 	}
 	r.record("deliver", "payment state updated")
+	if (r.schedule.Program == ProgramExpiringEventClaim || r.schedule.Program == ProgramDurableEventClaim) && action.Status == "captured" {
+		r.effectCount++
+		r.record("fulfill", "accepted payment event caused fulfillment")
+	}
 	return nil
 }
 

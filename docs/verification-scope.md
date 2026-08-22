@@ -215,6 +215,10 @@ This report tests a new implementation of known failure families.
 The second probe accepts signed Unicode bytes and rejects tampering.
 It also rejects a signed event that has no event ID.
 This result is a correct external security control.
+The replay-window challenge is absent from Scout training.
+It expires an event claim after one day and delivers the same trusted event.
+Scout gives its failure and matched safe delay the same score.
+This negative result identifies an unmodeled time feature.
 One genuine Test Mode webhook proves the signed integration path.
 These results do not describe an unknown production traffic distribution.
 

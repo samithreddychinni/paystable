@@ -115,6 +115,22 @@ type ExternalTransferCase struct {
 	WorstRank         int     `json:"worst_rank"`
 }
 
+type ReplayWindowReport struct {
+	Version                  int     `json:"version"`
+	Evaluation               string  `json:"evaluation"`
+	FixedPriors              bool    `json:"fixed_priors"`
+	ModelBytes               int     `json:"model_bytes"`
+	FailureInvariant         string  `json:"failure_invariant"`
+	FailureScore             float64 `json:"failure_score"`
+	SafeScore                float64 `json:"safe_score"`
+	ScoresTied               bool    `json:"scores_tied"`
+	SameFeatureProfile       bool    `json:"same_feature_profile"`
+	DeterministicReplay      bool    `json:"deterministic_replay"`
+	OriginalActions          int     `json:"original_actions"`
+	ReducedActions           int     `json:"reduced_actions"`
+	CorrectControlViolations int     `json:"correct_control_violations"`
+}
+
 // TrainScout fits a linear pairwise ranker to deterministic invariant results.
 func TrainScout(corpus ProgramCorpus) (ScoutModel, error) {
 	return trainScout(corpus, "")
@@ -262,6 +278,67 @@ func RunExternalTransferReport(corpus ProgramCorpus) (ExternalTransferReport, er
 		}
 	}
 	return report, nil
+}
+
+// RunReplayWindowReport tests a failure family that is absent from the training corpus.
+func RunReplayWindowReport(corpus ProgramCorpus) (ReplayWindowReport, error) {
+	model, err := trainScoutWithPriors(corpus, "", false)
+	if err != nil {
+		return ReplayWindowReport{}, err
+	}
+	modelJSON, err := json.Marshal(model)
+	if err != nil {
+		return ReplayWindowReport{}, err
+	}
+	replay := func(name, program string, seconds int64) Schedule {
+		return Schedule{
+			Name: name, Program: program, OrderID: "order_replay_window",
+			Actions: []Action{
+				{Type: "deliver", EventID: "event_replay", Status: "captured"},
+				{Type: "advance", AdvanceSeconds: seconds},
+				{Type: "deliver", EventID: "event_replay", Status: "captured"},
+			},
+		}
+	}
+	failureSchedule := replay("expired event claim accepts a replay", ProgramExpiringEventClaim, EventClaimRetentionSeconds+1)
+	safeSchedule := replay("active event claim rejects a replay", ProgramExpiringEventClaim, 3600)
+	correctSchedule := replay("durable event claim rejects a delayed replay", ProgramDurableEventClaim, EventClaimRetentionSeconds+1)
+	failure, err := Run(failureSchedule)
+	if err != nil {
+		return ReplayWindowReport{}, err
+	}
+	repeated, err := Run(failureSchedule)
+	if err != nil {
+		return ReplayWindowReport{}, err
+	}
+	safe, err := Run(safeSchedule)
+	if err != nil {
+		return ReplayWindowReport{}, err
+	}
+	correct, err := Run(correctSchedule)
+	if err != nil {
+		return ReplayWindowReport{}, err
+	}
+	if !resultHasInvariant(failure, InvariantFulfillmentAtMostOnce) || len(safe.Violations) != 0 || len(correct.Violations) != 0 {
+		return ReplayWindowReport{}, fmt.Errorf("replay-window controls produced an invalid result")
+	}
+	reduced, _, err := Reduce(failureSchedule, InvariantFulfillmentAtMostOnce, Run)
+	if err != nil {
+		return ReplayWindowReport{}, err
+	}
+	failureFeatures := scoutFeatures(failureSchedule.Actions)
+	safeFeatures := scoutFeatures(safeSchedule.Actions)
+	failureScore := model.score(failureSchedule.Actions)
+	safeScore := model.score(safeSchedule.Actions)
+	return ReplayWindowReport{
+		Version: 1, Evaluation: "unseen-dedup-retention-replay", FixedPriors: false,
+		ModelBytes: len(modelJSON), FailureInvariant: InvariantFulfillmentAtMostOnce,
+		FailureScore: failureScore, SafeScore: safeScore, ScoresTied: failureScore == safeScore,
+		SameFeatureProfile:  slices.Equal(failureFeatures, safeFeatures),
+		DeterministicReplay: reflect.DeepEqual(failure, repeated),
+		OriginalActions:     len(failureSchedule.Actions), ReducedActions: len(reduced.Actions),
+		CorrectControlViolations: len(correct.Violations),
+	}, nil
 }
 
 // RunPriorFreeStressReport shuffles score ties across repeated held-out trials.

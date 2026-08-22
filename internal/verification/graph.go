@@ -55,7 +55,7 @@ func CompileBehaviorGraph(program string, maxActions int) (BehaviorGraph, error)
 		schedule: Schedule{Name: "payment behavior graph", Program: program, OrderID: "order_graph"},
 		running:  true, seen: make(map[string]bool), effects: make(map[string]bool),
 	}
-	graph := BehaviorGraph{Version: 7, Program: program, MaxActions: maxActions}
+	graph := BehaviorGraph{Version: 8, Program: program, MaxActions: maxActions}
 	graph.Nodes = append(graph.Nodes, BehaviorNode{ID: 0, State: behaviorState(initial)})
 	states := []*runner{initial}
 	nodeByState := map[string]int{behaviorStateKey(0, initial): 0}
@@ -90,6 +90,13 @@ func CompileBehaviorGraph(program string, maxActions int) (BehaviorGraph, error)
 }
 
 func behaviorActions(program string) []Action {
+	if program == ProgramExpiringEventClaim || program == ProgramDurableEventClaim {
+		return []Action{
+			{Type: "deliver", EventID: "event_replay", Status: "captured"},
+			{Type: "advance", AdvanceSeconds: 3600},
+			{Type: "advance", AdvanceSeconds: EventClaimRetentionSeconds + 1},
+		}
+	}
 	if program == ProgramRetryForever || program == ProgramRetryBounded {
 		return []Action{
 			{Type: "deliver", EventID: "event_captured", Status: "captured"},
