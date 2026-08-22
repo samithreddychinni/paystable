@@ -1,0 +1,9 @@
+{
+  "name": "delayed stale event keeps the terminal state",
+  "program": "terminal-stable",
+  "order_id": "order_delayed_1",
+  "actions": [
+    {"type": "deliver", "event_id": "event_captured", "status": "captured"},
+    {"type": "deliver", "event_id": "event_stale", "status": "failed"}
+  ]
+}

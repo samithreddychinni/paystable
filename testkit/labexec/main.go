@@ -247,6 +247,9 @@ func (e *executor) postBody(path string, body []byte, signature, expected string
 	if expected == "http-500" && resp.StatusCode == http.StatusInternalServerError {
 		return nil
 	}
+	if expected == "db-conflict" && resp.StatusCode == http.StatusConflict {
+		return nil
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		message, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return fmt.Errorf("merchant returned %s: %s", resp.Status, bytes.TrimSpace(message))

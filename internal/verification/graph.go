@@ -52,7 +52,7 @@ func CompileBehaviorGraph(program string, maxActions int) (BehaviorGraph, error)
 		schedule: Schedule{Name: "payment behavior graph", Program: program, OrderID: "order_graph"},
 		running:  true, seen: make(map[string]bool), effects: make(map[string]bool),
 	}
-	graph := BehaviorGraph{Version: 2, Program: program, MaxActions: maxActions}
+	graph := BehaviorGraph{Version: 3, Program: program, MaxActions: maxActions}
 	graph.Nodes = append(graph.Nodes, BehaviorNode{ID: 0, State: behaviorState(initial)})
 	states := []*runner{initial}
 	nodeByState := map[string]int{behaviorStateKey(0, initial): 0}
@@ -111,6 +111,8 @@ func behaviorActions(program string) []Action {
 		actions = append(actions, Action{Type: "fulfill", Response: "connection-reset"})
 	case ProgramNewKeyOnServerError:
 		actions = append(actions, Action{Type: "fulfill", Response: "http-500"})
+	case ProgramNewKeyOnDBConflict, ProgramCorrectDBConflict:
+		actions = append(actions, Action{Type: "fulfill", Response: "db-conflict"})
 	case ProgramAcceptUntrusted, ProgramCorrectSecurity:
 		actions = append(actions,
 			Action{Type: "deliver", EventID: "event_untrusted", Status: "captured", Trust: "invalid-signature"},

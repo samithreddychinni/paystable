@@ -17,7 +17,7 @@ type ProgramCase struct {
 
 // GenerateProgramCorpus returns the executable programs and their canonical schedules.
 func GenerateProgramCorpus() ProgramCorpus {
-	return ProgramCorpus{Version: 2, MaxScheduleActions: 4, Programs: []ProgramCase{
+	return ProgramCorpus{Version: 3, MaxScheduleActions: 4, Programs: []ProgramCase{
 		{
 			Family: "deduplication-order", Program: ProgramFulfillBeforeDedup,
 			GroundTruth: Schedule{
@@ -87,6 +87,18 @@ func GenerateProgramCorpus() ProgramCorpus {
 			ExpectedInvariant: InvariantFulfillmentAtMostOnce, ExpectedFinalState: "captured", ExpectedEffectCount: 2,
 		},
 		{
+			Family: "database-conflict", Program: ProgramNewKeyOnDBConflict,
+			GroundTruth: Schedule{
+				Name: "new idempotency key after a database conflict", Program: ProgramNewKeyOnDBConflict, OrderID: "order_corpus_db_conflict_1",
+				Actions: []Action{
+					{Type: "deliver", EventID: "event_captured", Status: "captured"},
+					{Type: "fulfill", Response: "db-conflict"},
+					{Type: "fulfill", Response: "ok"},
+				},
+			},
+			ExpectedInvariant: InvariantFulfillmentAtMostOnce, ExpectedFinalState: "captured", ExpectedEffectCount: 2,
+		},
+		{
 			Family: "terminal-state", Program: ProgramTerminalRegression,
 			GroundTruth: Schedule{
 				Name: "stale event changes a terminal state", Program: ProgramTerminalRegression, OrderID: "order_corpus_6",
@@ -96,6 +108,17 @@ func GenerateProgramCorpus() ProgramCorpus {
 				},
 			},
 			ExpectedInvariant: InvariantTerminalStateStable, ExpectedFinalState: "failed", ExpectedEffectCount: 0,
+		},
+		{
+			Family: "correct-terminal", Program: ProgramTerminalStable,
+			GroundTruth: Schedule{
+				Name: "delayed stale event keeps the terminal state", Program: ProgramTerminalStable, OrderID: "order_corpus_delayed_1",
+				Actions: []Action{
+					{Type: "deliver", EventID: "event_captured", Status: "captured"},
+					{Type: "deliver", EventID: "event_stale", Status: "failed"},
+				},
+			},
+			ExpectedFinalState: "captured", ExpectedEffectCount: 0,
 		},
 		{
 			Family: "webhook-authentication", Program: ProgramAcceptUntrusted,
@@ -151,6 +174,18 @@ func GenerateProgramCorpus() ProgramCorpus {
 				Name: "correct concurrent event claim", Program: ProgramCorrectConcurrency, OrderID: "order_corpus_concurrent_2",
 				Actions: []Action{
 					{Type: "deliver", EventID: "event_parallel", Status: "captured", Parallel: 2},
+					{Type: "fulfill", Response: "ok"},
+				},
+			},
+			ExpectedFinalState: "captured", ExpectedEffectCount: 1,
+		},
+		{
+			Family: "correct-db-conflict", Program: ProgramCorrectDBConflict,
+			GroundTruth: Schedule{
+				Name: "stable key after a database conflict", Program: ProgramCorrectDBConflict, OrderID: "order_corpus_db_conflict_2",
+				Actions: []Action{
+					{Type: "deliver", EventID: "event_captured", Status: "captured"},
+					{Type: "fulfill", Response: "db-conflict"},
 					{Type: "fulfill", Response: "ok"},
 				},
 			},

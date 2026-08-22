@@ -13,11 +13,13 @@ const (
 	ProgramNewKeyOnTimeout         = "new-key-on-timeout"
 	ProgramNewKeyOnReset           = "new-key-on-reset"
 	ProgramNewKeyOnServerError     = "new-key-on-server-error"
+	ProgramNewKeyOnDBConflict      = "new-key-on-db-conflict"
 	ProgramTerminalRegression      = "terminal-regression"
 	ProgramTerminalStable          = "terminal-stable"
 	ProgramAcceptUntrusted         = "accept-untrusted-webhook"
 	ProgramCorrectSecurity         = "correct-security"
 	ProgramCorrectNetwork          = "correct-network"
+	ProgramCorrectDBConflict       = "correct-db-conflict"
 	InvariantFulfillmentAtMostOnce = "INV-2"
 	InvariantTerminalStateStable   = "INV-4"
 	InvariantTrustedEventsOnly     = "INV-SEC-1"
@@ -157,7 +159,7 @@ func Validate(schedule Schedule) error {
 			if action.EventID != "" || action.Status != "" || action.CrashAt != "" || action.Trust != "" || action.Parallel != 0 {
 				return fmt.Errorf("action %d has fields that fulfill does not use", i+1)
 			}
-			if action.Response != "ok" && action.Response != "lost" && action.Response != "timeout" && action.Response != "connection-reset" && action.Response != "http-500" {
+			if action.Response != "ok" && action.Response != "lost" && action.Response != "timeout" && action.Response != "connection-reset" && action.Response != "http-500" && action.Response != "db-conflict" {
 				return fmt.Errorf("action %d has an invalid fulfillment response", i+1)
 			}
 		case "restart":
@@ -175,7 +177,8 @@ func supportedProgram(program string) bool {
 	switch program {
 	case ProgramCorrect, ProgramConcurrentBeforeClaim, ProgramCorrectConcurrency, ProgramFulfillBeforeDedup, ProgramNewKeyOnRetry, ProgramNewKeyOnTimeout,
 		ProgramNewKeyOnReset, ProgramNewKeyOnServerError, ProgramTerminalRegression,
-		ProgramTerminalStable, ProgramAcceptUntrusted, ProgramCorrectSecurity, ProgramCorrectNetwork:
+		ProgramNewKeyOnDBConflict, ProgramTerminalStable, ProgramAcceptUntrusted, ProgramCorrectSecurity,
+		ProgramCorrectNetwork, ProgramCorrectDBConflict:
 		return true
 	}
 	return false
@@ -282,7 +285,7 @@ func (r *runner) fulfill(action Action) error {
 // UsesNewKey reports whether a program changes its fulfillment key after a retry.
 func UsesNewKey(program string) bool {
 	switch program {
-	case ProgramNewKeyOnRetry, ProgramNewKeyOnTimeout, ProgramNewKeyOnReset, ProgramNewKeyOnServerError:
+	case ProgramNewKeyOnRetry, ProgramNewKeyOnTimeout, ProgramNewKeyOnReset, ProgramNewKeyOnServerError, ProgramNewKeyOnDBConflict:
 		return true
 	}
 	return false
@@ -297,6 +300,8 @@ func ResponseTraceAction(response string) string {
 		return "connection_reset"
 	case "http-500":
 		return "response_http_500"
+	case "db-conflict":
+		return "database_conflict"
 	default:
 		return "response_lost"
 	}

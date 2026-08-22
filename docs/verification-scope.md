@@ -94,8 +94,10 @@ The first benchmark will include these bug classes:
 3. A stale event changes a terminal payment state.
 4. An untrusted webhook changes payment state.
 5. Concurrent webhook handlers fulfill before one handler claims the event.
+6. A database conflict causes a retry with a new idempotency key.
 
-The retry class includes lost responses, timeouts, connection resets, and HTTP 500 responses.
+The retry class includes lost responses, timeouts, connection resets, HTTP 500 responses, and database conflicts.
+Action order represents delayed webhook delivery without wall-clock waits.
 Amount validation is the next bug class.
 
 ## Evaluation gates

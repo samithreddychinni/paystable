@@ -76,7 +76,7 @@ jobs:
           cache: false
       - name: Start the Docker laboratory
         run: docker compose -f docker-compose.lab.yml up --build -d
-      - name: Verify network, security, and concurrency faults
+      - name: Verify real fault schedules
         run: |
           go run ./testkit/labexec testkit/lab/scenarios/new-key-after-timeout.json /tmp/timeout.json INV-2
           go run ./testkit/labexec testkit/lab/scenarios/new-key-after-connection-reset.json /tmp/reset.json INV-2
@@ -86,6 +86,10 @@ jobs:
           go run ./testkit/labexec testkit/lab/scenarios/correct-security.json /tmp/correct-security.json
           go run ./testkit/labexec testkit/lab/scenarios/concurrent-claim.json /tmp/concurrent-claim.json INV-2
           go run ./testkit/labexec testkit/lab/scenarios/correct-concurrency.json /tmp/correct-concurrency.json
+          go run ./testkit/labexec testkit/lab/scenarios/new-key-after-db-conflict.json /tmp/db-conflict.json INV-2
+          go run ./testkit/labexec testkit/lab/scenarios/correct-db-conflict.json /tmp/correct-db-conflict.json
+          go run ./testkit/labexec testkit/lab/scenarios/stale-terminal-regression.json /tmp/delayed-stale.json INV-4
+          go run ./testkit/labexec testkit/lab/scenarios/correct-terminal.json /tmp/correct-terminal.json
       - name: Stop the Docker laboratory
         if: always()
         run: docker compose -f docker-compose.lab.yml down

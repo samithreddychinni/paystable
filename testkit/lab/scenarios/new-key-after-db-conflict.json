@@ -1,0 +1,10 @@
+{
+  "name": "new idempotency key after a database conflict",
+  "program": "new-key-on-db-conflict",
+  "order_id": "order_db_conflict_1",
+  "actions": [
+    {"type": "deliver", "event_id": "event_captured", "status": "captured"},
+    {"type": "fulfill", "response": "db-conflict"},
+    {"type": "fulfill", "response": "ok"}
+  ]
+}

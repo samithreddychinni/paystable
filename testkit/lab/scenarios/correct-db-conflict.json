@@ -1,0 +1,10 @@
+{
+  "name": "stable key after a database conflict",
+  "program": "correct-db-conflict",
+  "order_id": "order_db_conflict_2",
+  "actions": [
+    {"type": "deliver", "event_id": "event_captured", "status": "captured"},
+    {"type": "fulfill", "response": "db-conflict"},
+    {"type": "fulfill", "response": "ok"}
+  ]
+}

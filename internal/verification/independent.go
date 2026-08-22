@@ -70,7 +70,7 @@ func RunIndependentReport(training ProgramCorpus, budget int, seed int64) (Indep
 		return IndependentReport{}, err
 	}
 	report := IndependentReport{
-		Version: 2, Evaluation: "independent-merchant-implementations",
+		Version: 3, Evaluation: "independent-merchant-implementations",
 		Budget: budget, Seed: seed, ScoutModelBytes: len(modelJSON),
 	}
 	for offset := int64(0); offset < 20; offset++ {
@@ -183,6 +183,7 @@ func independentCases() []independentCase {
 	trustedCaptured := Action{Type: "deliver", EventID: "captured", Status: "captured"}
 	trustedFailed := Action{Type: "deliver", EventID: "failed", Status: "failed"}
 	parallelCaptured := Action{Type: "deliver", EventID: "parallel", Status: "captured", Parallel: 2}
+	databaseConflict := Action{Type: "fulfill", Response: "db-conflict"}
 	fulfillOK := Action{Type: "fulfill", Response: "ok"}
 	return []independentCase{
 		{
@@ -203,6 +204,16 @@ func independentCases() []independentCase {
 		{
 			program: ProgramCase{Program: "external-retry-safe", Family: "correct-retry"},
 			actions: retryActions(trustedCaptured, trustedFailed, fulfillOK),
+			execute: func(schedule Schedule) (Result, error) { return runIndependentRetry(schedule, false) },
+		},
+		{
+			program: ProgramCase{Program: "external-db-conflict-unsafe", Family: "database-conflict", ExpectedInvariant: InvariantFulfillmentAtMostOnce},
+			actions: []Action{trustedCaptured, trustedFailed, databaseConflict, fulfillOK},
+			execute: func(schedule Schedule) (Result, error) { return runIndependentRetry(schedule, true) },
+		},
+		{
+			program: ProgramCase{Program: "external-db-conflict-safe", Family: "correct-db-conflict"},
+			actions: []Action{trustedCaptured, trustedFailed, databaseConflict, fulfillOK},
 			execute: func(schedule Schedule) (Result, error) { return runIndependentRetry(schedule, false) },
 		},
 		{

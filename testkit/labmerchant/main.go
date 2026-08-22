@@ -13,7 +13,7 @@ import (
 	"os"
 	"time"
 
-	_ "github.com/lib/pq"
+	"github.com/lib/pq"
 
 	"github.com/IDEA-Amrita/paystable/internal/gateway/razorpay"
 	"github.com/IDEA-Amrita/paystable/internal/verification"
@@ -272,6 +272,10 @@ func (a *app) fulfill(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &action, "fulfill action") {
 		return
 	}
+	if action.Response == "db-conflict" {
+		a.fulfillWithConflict(w, r, action)
+		return
+	}
 	tx, err := a.db.BeginTx(r.Context(), nil)
 	if err != nil {
 		http.Error(w, "could not start fulfillment", http.StatusInternalServerError)
@@ -340,6 +344,89 @@ func (a *app) fulfill(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (a *app) fulfillWithConflict(w http.ResponseWriter, r *http.Request, action verification.Action) {
+	current, err := a.loadState(r)
+	if err != nil || !current.pendingEffect {
+		http.Error(w, "payment is not ready for fulfillment", http.StatusConflict)
+		return
+	}
+	if action.Type != "fulfill" || verification.Validate(verification.Schedule{
+		Name: current.scenario, Program: current.program, OrderID: current.orderID, Actions: []verification.Action{action},
+	}) != nil {
+		http.Error(w, "fulfill action is not legal", http.StatusBadRequest)
+		return
+	}
+	key := current.orderID
+	if verification.UsesNewKey(current.program) {
+		key = fmt.Sprintf("%s:%d", key, current.effectAttempt+1)
+	}
+	if err := a.recordExternalEffect(r.Context(), key, current.orderID); err != nil {
+		http.Error(w, "could not record fulfillment", http.StatusInternalServerError)
+		return
+	}
+	if err := a.causeDatabaseConflict(r.Context()); err != nil {
+		http.Error(w, "could not create a database conflict", http.StatusInternalServerError)
+		return
+	}
+	if err := a.record(r.Context(), verification.ResponseTraceAction(action.Response), "database transaction failed after fulfillment"); err != nil {
+		http.Error(w, "could not record the database conflict", http.StatusInternalServerError)
+		return
+	}
+	http.Error(w, "database transaction conflict", http.StatusConflict)
+}
+
+func (a *app) recordExternalEffect(ctx context.Context, key, orderID string) error {
+	tx, err := a.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO lab_effects (effect_key, order_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, key, orderID); err != nil {
+		return err
+	}
+	if err := recordTx(ctx, tx, "fulfill", "fulfillment sink accepted key "+key); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (a *app) causeDatabaseConflict(ctx context.Context) error {
+	options := &sql.TxOptions{Isolation: sql.LevelSerializable}
+	first, err := a.db.BeginTx(ctx, options)
+	if err != nil {
+		return err
+	}
+	defer first.Rollback()
+	second, err := a.db.BeginTx(ctx, options)
+	if err != nil {
+		return err
+	}
+	defer second.Rollback()
+	var firstAttempt, secondAttempt int
+	if err := first.QueryRowContext(ctx, `SELECT effect_attempt FROM lab_state WHERE singleton=true`).Scan(&firstAttempt); err != nil {
+		return err
+	}
+	if err := second.QueryRowContext(ctx, `SELECT effect_attempt FROM lab_state WHERE singleton=true`).Scan(&secondAttempt); err != nil {
+		return err
+	}
+	if _, err := first.ExecContext(ctx, `UPDATE lab_state SET effect_attempt=$1 WHERE singleton=true`, firstAttempt+1); err != nil {
+		return err
+	}
+	if err := first.Commit(); err != nil {
+		return err
+	}
+	_, err = second.ExecContext(ctx, `UPDATE lab_state SET effect_attempt=$1 WHERE singleton=true`, secondAttempt+1)
+	if err == nil {
+		return fmt.Errorf("expected PostgreSQL error 40001")
+	}
+	var databaseError *pq.Error
+	if !errors.As(err, &databaseError) || databaseError.Code != "40001" {
+		return fmt.Errorf("expected PostgreSQL error 40001, got %w", err)
+	}
+	return nil
 }
 
 func (a *app) result(w http.ResponseWriter, r *http.Request) {
