@@ -41,12 +41,12 @@ The command does not execute the external source again.
 Scout already knows the three mismatch features from its training corpus.
 This report tests implementation transfer, not a new failure family.
 
-## Signature source
+## HTTP and signature source
 
 - Repository: [wpmgr](https://github.com/mosamlife/wpmgr/tree/e2fd78e9829a112ac229b1586e66ba3fd39aeaf7)
 - Commit: `e2fd78e9829a112ac229b1586e66ba3fd39aeaf7`
 - License: [AGPL-3.0](https://github.com/mosamlife/wpmgr/blob/e2fd78e9829a112ac229b1586e66ba3fd39aeaf7/LICENSE)
-- Source: [Razorpay webhook verifier](https://github.com/mosamlife/wpmgr/blob/e2fd78e9829a112ac229b1586e66ba3fd39aeaf7/apps/api/internal/billing/razorpay/webhook.go)
+- Source: [Razorpay webhook verifier](https://github.com/mosamlife/wpmgr/blob/e2fd78e9829a112ac229b1586e66ba3fd39aeaf7/apps/api/internal/billing/razorpay/webhook.go) and [HTTP handler](https://github.com/mosamlife/wpmgr/blob/e2fd78e9829a112ac229b1586e66ba3fd39aeaf7/apps/api/internal/billing/webhook_handler.go)
 
 Run the signature check:
 
@@ -59,5 +59,11 @@ A correctly signed Unicode body passes.
 The original signature rejects a changed UTF-8 body.
 The verifier also rejects a signed body without an event ID.
 This result is a correct external control, not a failure finding.
-The probe does not run HTTP routing, a database, or the subscription state machine.
+The second check uses the actual HTTP route and a migrated PostgreSQL 16 container.
+It revokes the ledger INSERT permission to inject a real database rejection.
+The failed request returns 500, does not change the tenant, and does not call the provider API.
+After the permission is restored, the same signed event returns 200 and activates the plan.
+A duplicate delivery returns 200 without another ledger row or provider request.
+The provider fetch uses a local HTTP server, not the Razorpay API.
+The check does not start the complete wpmgr application or its unrelated services.
 The source requires Go 1.26.3, so Go can download that toolchain.

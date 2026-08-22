@@ -1,0 +1,175 @@
+package billing_test
+
+import (
+	"bytes"
+	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"github.com/testcontainers/testcontainers-go"
+	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
+	"github.com/testcontainers/testcontainers-go/wait"
+
+	"github.com/mosamlife/wpmgr/apps/api/internal/billing"
+	billingrazorpay "github.com/mosamlife/wpmgr/apps/api/internal/billing/razorpay"
+	"github.com/mosamlife/wpmgr/apps/api/internal/db"
+	"github.com/mosamlife/wpmgr/apps/api/internal/domain"
+)
+
+func TestPaystableRouteRetriesAfterPostgresWriteFailure(t *testing.T) {
+	app, admin := paystablePostgres(t)
+	tenant := uuid.New()
+	if _, err := app.Exec(context.Background(), `INSERT INTO tenants (id, name, slug, billing_provider, provider_customer_id) VALUES ($1, 'Paystable', 'paystable-route-retry', 'razorpay', 'cust_paystable')`, tenant); err != nil {
+		t.Fatalf("could not create the test tenant: %v", err)
+	}
+
+	var fetches atomic.Int32
+	providerAPI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fetches.Add(1)
+		if r.Method != http.MethodGet || r.URL.Path != "/subscriptions/sub_paystable" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"id":"sub_paystable","plan_id":"plan_starter_usd","customer_id":"cust_paystable","status":"active","current_end":1900000000}`)
+	}))
+	defer providerAPI.Close()
+
+	const secret = "paystable_webhook_secret"
+	provider := billingrazorpay.New(billingrazorpay.Config{
+		KeyID: "rzp_test_key", KeySecret: "rzp_test_secret", WebhookSecret: secret,
+		PlanStarterUSD: "plan_starter_usd", PlanStarterINR: "plan_starter_inr",
+		PlanAgencyUSD: "plan_agency_usd", PlanAgencyINR: "plan_agency_inr",
+		PlanScaleUSD: "plan_scale_usd", PlanScaleINR: "plan_scale_inr",
+		BaseURL: providerAPI.URL,
+	})
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	service := billing.New(app, nil, true, domain.SystemClock{}, logger)
+	service.SetProviders(billing.NewRegistry(provider), "razorpay")
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	billing.NewWebhookHandler(service, logger).RegisterPublic(router)
+
+	body := []byte(fmt.Sprintf(`{"entity":"event","event":"subscription.charged","contains":["subscription"],"payload":{"subscription":{"entity":{"id":"sub_paystable","plan_id":"plan_starter_usd","customer_id":"cust_paystable","status":"active","current_end":1900000000,"notes":{"wpmgr_tenant_id":%q}}}},"created_at":1700000000}`, tenant))
+	headers := http.Header{}
+	headers.Set("X-Razorpay-Signature", paystableSign(body, secret))
+	headers.Set("X-Razorpay-Event-Id", "evt_paystable_route_retry")
+	send := func() *httptest.ResponseRecorder {
+		response := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodPost, "/webhooks/billing/razorpay", bytes.NewReader(body))
+		request.Header = headers.Clone()
+		router.ServeHTTP(response, request)
+		return response
+	}
+
+	if _, err := admin.Exec(context.Background(), "REVOKE INSERT ON TABLE billing_events FROM wpmgr_app"); err != nil {
+		t.Fatalf("could not inject the PostgreSQL write failure: %v", err)
+	}
+	if response := send(); response.Code != http.StatusInternalServerError {
+		t.Fatalf("the failed ledger write returned %d, want 500: %s", response.Code, response.Body.String())
+	}
+	if plan, status := paystableTenantState(t, app, tenant); plan != string(billing.TierFree) || status != "none" {
+		t.Fatalf("the failed request changed the tenant to %s/%s", plan, status)
+	}
+	if fetches.Load() != 0 {
+		t.Fatal("the failed ledger write reached the provider API")
+	}
+
+	if _, err := admin.Exec(context.Background(), "GRANT INSERT ON TABLE billing_events TO wpmgr_app"); err != nil {
+		t.Fatalf("could not restore the PostgreSQL write permission: %v", err)
+	}
+	if got := paystableEventCount(t, admin); got != 0 {
+		t.Fatalf("the failed request left %d ledger rows, want 0", got)
+	}
+	if response := send(); response.Code != http.StatusOK {
+		t.Fatalf("the replay returned %d, want 200: %s", response.Code, response.Body.String())
+	}
+	if plan, status := paystableTenantState(t, app, tenant); plan != string(billing.TierStarter) || status != "active" {
+		t.Fatalf("the replay left the tenant at %s/%s, want starter/active", plan, status)
+	}
+	if response := send(); response.Code != http.StatusOK {
+		t.Fatalf("the duplicate returned %d, want 200: %s", response.Code, response.Body.String())
+	}
+	if got := paystableEventCount(t, admin); got != 1 {
+		t.Fatalf("the replay and duplicate left %d ledger rows, want 1", got)
+	}
+	if fetches.Load() != 1 {
+		t.Fatalf("the replay and duplicate made %d provider requests, want 1", fetches.Load())
+	}
+}
+
+func paystablePostgres(t *testing.T) (*db.Pool, *db.Pool) {
+	t.Helper()
+	ctx := context.Background()
+	container, err := tcpostgres.Run(ctx, "postgres:16-alpine",
+		tcpostgres.WithDatabase("wpmgr"), tcpostgres.WithUsername("wpmgr"), tcpostgres.WithPassword("wpmgr"),
+		testcontainers.WithWaitStrategy(wait.ForLog("database system is ready to accept connections").WithOccurrence(2).WithStartupTimeout(time.Minute)))
+	if err != nil {
+		t.Fatalf("could not start PostgreSQL: %v", err)
+	}
+	t.Cleanup(func() { _ = container.Terminate(ctx) })
+	dsn, err := container.ConnectionString(ctx, "sslmode=disable")
+	if err != nil {
+		t.Fatalf("could not get the PostgreSQL connection string: %v", err)
+	}
+	admin, err := db.Connect(ctx, dsn)
+	if err != nil {
+		t.Fatalf("could not connect to PostgreSQL: %v", err)
+	}
+	t.Cleanup(admin.Close)
+	if err := admin.Migrate(ctx); err != nil {
+		t.Fatalf("could not apply the database migrations: %v", err)
+	}
+	for _, statement := range []string{
+		"ALTER ROLE wpmgr_app LOGIN PASSWORD 'app'",
+		"GRANT USAGE ON SCHEMA public TO wpmgr_app",
+		"GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO wpmgr_app",
+		"REVOKE UPDATE, DELETE, TRUNCATE ON audit_log FROM wpmgr_app",
+	} {
+		if _, err := admin.Exec(ctx, statement); err != nil {
+			t.Fatalf("could not prepare the application role: %v", err)
+		}
+	}
+	app, err := db.Connect(ctx, strings.Replace(dsn, "wpmgr:wpmgr@", "wpmgr_app:app@", 1))
+	if err != nil {
+		t.Fatalf("could not connect as the application role: %v", err)
+	}
+	t.Cleanup(app.Close)
+	return app, admin
+}
+
+func paystableSign(body []byte, secret string) string {
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write(body)
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+func paystableTenantState(t *testing.T, pool *db.Pool, tenant uuid.UUID) (string, string) {
+	t.Helper()
+	var plan, status string
+	if err := pool.QueryRow(context.Background(), "SELECT plan, plan_status FROM tenants WHERE id = $1", tenant).Scan(&plan, &status); err != nil {
+		t.Fatalf("could not read the tenant state: %v", err)
+	}
+	return plan, status
+}
+
+func paystableEventCount(t *testing.T, pool *db.Pool) int {
+	t.Helper()
+	var count int
+	if err := pool.QueryRow(context.Background(), "SELECT count(*) FROM billing_events WHERE provider_event_id = 'evt_paystable_route_retry'").Scan(&count); err != nil {
+		t.Fatalf("could not read the event ledger: %v", err)
+	}
+	return count
+}

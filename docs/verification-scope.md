@@ -214,7 +214,11 @@ The no-prior transfer report ranks each mismatch above its matched control.
 This report tests a new implementation of known failure families.
 The second probe accepts signed Unicode bytes and rejects tampering.
 It also rejects a signed event that has no event ID.
-This result is a correct external security control.
+It also sends a signed event through the actual external HTTP route and PostgreSQL schema.
+A rejected ledger write returns 500 without a state change or provider fetch.
+The same event succeeds after recovery, and its next duplicate is an idempotent 200.
+The provider fetch uses a local HTTP server, and the full external application is not started.
+These results are correct external controls.
 The replay-window challenge is absent from Scout training.
 It expires an event claim after one day and delivers the same trusted event.
 Scout gives its failure and matched safe delay the same score.

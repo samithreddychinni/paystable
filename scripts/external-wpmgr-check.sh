@@ -14,8 +14,10 @@ test "$(git -C "$source_dir" rev-parse HEAD)" = "$commit"
 
 cp "$repo_dir/testkit/external/wpmgr/unicode_tampering_test.go.txt" \
 	"$source_dir/apps/api/internal/billing/razorpay/paystable_probe_test.go"
+cp "$repo_dir/testkit/external/wpmgr/http_postgres_retry_test.go.txt" \
+	"$source_dir/apps/api/internal/billing/paystable_probe_test.go"
 
 cd "$source_dir/apps/api"
-GOTOOLCHAIN=auto go test ./internal/billing/razorpay \
-	-run '^TestPaystableProbeChecksUnicodeAndTampering$' -count=1
-printf '%s\n' 'The external Unicode and tampering checks passed.'
+GOTOOLCHAIN=auto go test ./internal/billing/razorpay ./internal/billing \
+	-run '^TestPaystable(ProbeChecksUnicodeAndTampering|RouteRetriesAfterPostgresWriteFailure)$' -count=1
+printf '%s\n' 'The external signature, HTTP, and PostgreSQL checks passed.'
