@@ -1,0 +1,10 @@
+{
+  "name": "new idempotency key after a server error",
+  "program": "new-key-on-server-error",
+  "order_id": "order_server_error_1",
+  "actions": [
+    {"type": "deliver", "event_id": "event_captured", "status": "captured"},
+    {"type": "fulfill", "response": "http-500"},
+    {"type": "fulfill", "response": "ok"}
+  ]
+}

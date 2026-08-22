@@ -43,9 +43,45 @@ func GenerateProgramCorpus() ProgramCorpus {
 			ExpectedInvariant: InvariantFulfillmentAtMostOnce, ExpectedFinalState: "captured", ExpectedEffectCount: 2,
 		},
 		{
+			Family: "retry-idempotency", Program: ProgramNewKeyOnTimeout,
+			GroundTruth: Schedule{
+				Name: "new idempotency key after a response timeout", Program: ProgramNewKeyOnTimeout, OrderID: "order_corpus_3",
+				Actions: []Action{
+					{Type: "deliver", EventID: "event_captured", Status: "captured"},
+					{Type: "fulfill", Response: "timeout"},
+					{Type: "fulfill", Response: "ok"},
+				},
+			},
+			ExpectedInvariant: InvariantFulfillmentAtMostOnce, ExpectedFinalState: "captured", ExpectedEffectCount: 2,
+		},
+		{
+			Family: "retry-idempotency", Program: ProgramNewKeyOnReset,
+			GroundTruth: Schedule{
+				Name: "new idempotency key after a connection reset", Program: ProgramNewKeyOnReset, OrderID: "order_corpus_4",
+				Actions: []Action{
+					{Type: "deliver", EventID: "event_captured", Status: "captured"},
+					{Type: "fulfill", Response: "connection-reset"},
+					{Type: "fulfill", Response: "ok"},
+				},
+			},
+			ExpectedInvariant: InvariantFulfillmentAtMostOnce, ExpectedFinalState: "captured", ExpectedEffectCount: 2,
+		},
+		{
+			Family: "retry-idempotency", Program: ProgramNewKeyOnServerError,
+			GroundTruth: Schedule{
+				Name: "new idempotency key after a server error", Program: ProgramNewKeyOnServerError, OrderID: "order_corpus_5",
+				Actions: []Action{
+					{Type: "deliver", EventID: "event_captured", Status: "captured"},
+					{Type: "fulfill", Response: "http-500"},
+					{Type: "fulfill", Response: "ok"},
+				},
+			},
+			ExpectedInvariant: InvariantFulfillmentAtMostOnce, ExpectedFinalState: "captured", ExpectedEffectCount: 2,
+		},
+		{
 			Family: "terminal-state", Program: ProgramTerminalRegression,
 			GroundTruth: Schedule{
-				Name: "stale event changes a terminal state", Program: ProgramTerminalRegression, OrderID: "order_corpus_3",
+				Name: "stale event changes a terminal state", Program: ProgramTerminalRegression, OrderID: "order_corpus_6",
 				Actions: []Action{
 					{Type: "deliver", EventID: "event_captured", Status: "captured"},
 					{Type: "deliver", EventID: "event_stale", Status: "failed"},
@@ -54,14 +90,49 @@ func GenerateProgramCorpus() ProgramCorpus {
 			ExpectedInvariant: InvariantTerminalStateStable, ExpectedFinalState: "failed", ExpectedEffectCount: 0,
 		},
 		{
+			Family: "webhook-authentication", Program: ProgramAcceptUntrusted,
+			GroundTruth: Schedule{
+				Name: "invalid signature changes payment state", Program: ProgramAcceptUntrusted, OrderID: "order_corpus_7",
+				Actions: []Action{{
+					Type: "deliver", EventID: "event_untrusted", Status: "captured", Trust: "invalid-signature",
+				}},
+			},
+			ExpectedInvariant: InvariantTrustedEventsOnly, ExpectedFinalState: "captured", ExpectedEffectCount: 0,
+		},
+		{
 			Family: "correct", Program: ProgramCorrect,
 			GroundTruth: Schedule{
-				Name: "correct payment handling", Program: ProgramCorrect, OrderID: "order_corpus_4",
+				Name: "correct payment handling", Program: ProgramCorrect, OrderID: "order_corpus_8",
 				Actions: []Action{
 					{Type: "deliver", EventID: "event_captured", Status: "captured"},
 					{Type: "fulfill", Response: "lost"},
 					{Type: "fulfill", Response: "ok"},
 					{Type: "deliver", EventID: "event_stale", Status: "failed"},
+				},
+			},
+			ExpectedFinalState: "captured", ExpectedEffectCount: 1,
+		},
+		{
+			Family: "correct-security", Program: ProgramCorrectSecurity,
+			GroundTruth: Schedule{
+				Name: "correct webhook authentication", Program: ProgramCorrectSecurity, OrderID: "order_corpus_9",
+				Actions: []Action{
+					{Type: "deliver", EventID: "event_untrusted", Status: "captured", Trust: "invalid-signature"},
+					{Type: "deliver", EventID: "event_tampered", Status: "captured", Trust: "tampered-body"},
+					{Type: "deliver", EventID: "event_captured", Status: "captured"},
+					{Type: "fulfill", Response: "ok"},
+				},
+			},
+			ExpectedFinalState: "captured", ExpectedEffectCount: 1,
+		},
+		{
+			Family: "correct-network", Program: ProgramCorrectNetwork,
+			GroundTruth: Schedule{
+				Name: "correct fulfillment retry after a timeout", Program: ProgramCorrectNetwork, OrderID: "order_corpus_10",
+				Actions: []Action{
+					{Type: "deliver", EventID: "event_captured", Status: "captured"},
+					{Type: "fulfill", Response: "timeout"},
+					{Type: "fulfill", Response: "ok"},
 				},
 			},
 			ExpectedFinalState: "captured", ExpectedEffectCount: 1,

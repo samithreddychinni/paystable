@@ -37,6 +37,13 @@ func TestReduceProducesOneMinimalSchedules(t *testing.T) {
 				{Type: "deliver", EventID: "event-old", Status: "failed"},
 			},
 		},
+		{
+			name: "untrusted webhook", program: ProgramAcceptUntrusted,
+			invariant: InvariantTrustedEventsOnly, want: 1,
+			actions: []Action{
+				{Type: "deliver", EventID: "event-4", Status: "captured", Trust: "tampered-body"},
+			},
+		},
 	}
 
 	for _, tt := range tests {

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -14,6 +15,7 @@ import (
 
 	_ "github.com/lib/pq"
 
+	"github.com/IDEA-Amrita/paystable/internal/gateway/razorpay"
 	"github.com/IDEA-Amrita/paystable/internal/verification"
 )
 
@@ -45,7 +47,10 @@ CREATE TABLE IF NOT EXISTS lab_trace (
     effect_count integer NOT NULL
 );`
 
-type app struct{ db *sql.DB }
+type app struct {
+	db            *sql.DB
+	webhookSecret string
+}
 
 type state struct {
 	scenario      string
@@ -83,7 +88,7 @@ func main() {
 		slog.Error("create laboratory schema", "error", err)
 		os.Exit(1)
 	}
-	a := &app{db: db}
+	a := &app{db: db, webhookSecret: envOr("LAB_WEBHOOK_SECRET", "lab-webhook-secret")}
 	_ = a.record(context.Background(), "restart", "merchant process started")
 
 	mux := http.NewServeMux()
@@ -142,13 +147,26 @@ func (a *app) reset(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *app) deliver(w http.ResponseWriter, r *http.Request) {
-	var action verification.Action
-	if !decodeJSON(w, r, &action, "deliver action") {
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
+	if err != nil {
+		http.Error(w, "invalid deliver action", http.StatusBadRequest)
 		return
 	}
 	current, err := a.loadState(r)
 	if err != nil {
 		http.Error(w, "laboratory state is not ready", http.StatusConflict)
+		return
+	}
+	trusted := razorpay.VerifyWebhookSignature(body, r.Header.Get("X-Lab-Signature"), a.webhookSecret)
+	if !trusted && current.program != verification.ProgramAcceptUntrusted {
+		http.Error(w, "untrusted payment event", http.StatusUnauthorized)
+		return
+	}
+	var action verification.Action
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.DisallowUnknownFields()
+	if decoder.Decode(&action) != nil || decoder.Decode(&struct{}{}) != io.EOF {
+		http.Error(w, "invalid deliver action", http.StatusBadRequest)
 		return
 	}
 	if action.Type != "deliver" || verification.Validate(verification.Schedule{
@@ -167,7 +185,7 @@ func (a *app) deliver(w http.ResponseWriter, r *http.Request) {
 			os.Exit(86)
 		}
 	}
-	if err := a.storeEvent(r, action); err != nil {
+	if err := a.storeEvent(r, action, !trusted); err != nil {
 		if errors.Is(err, errDuplicate) {
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -199,7 +217,7 @@ func (a *app) effectBeforeDedup(r *http.Request, orderID string) error {
 	return tx.Commit()
 }
 
-func (a *app) storeEvent(r *http.Request, action verification.Action) error {
+func (a *app) storeEvent(r *http.Request, action verification.Action, untrusted bool) error {
 	tx, err := a.db.BeginTx(r.Context(), nil)
 	if err != nil {
 		return err
@@ -221,6 +239,11 @@ func (a *app) storeEvent(r *http.Request, action verification.Action) error {
 			return err
 		}
 		return errDuplicate
+	}
+	if untrusted {
+		if err := recordTx(r.Context(), tx, "untrusted_accept", "untrusted payment event accepted"); err != nil {
+			return err
+		}
 	}
 	if _, err := tx.ExecContext(r.Context(), `INSERT INTO lab_events (event_id, status) VALUES ($1, $2)`, action.EventID, action.Status); err != nil {
 		return err
@@ -271,7 +294,7 @@ func (a *app) fulfill(w http.ResponseWriter, r *http.Request) {
 	}
 	attempt := current.effectAttempt + 1
 	key := current.orderID
-	if current.program == verification.ProgramNewKeyOnRetry {
+	if verification.UsesNewKey(current.program) {
 		key = fmt.Sprintf("%s:%d", key, attempt)
 	}
 	if _, err := tx.ExecContext(r.Context(), `
@@ -280,7 +303,7 @@ func (a *app) fulfill(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := tx.ExecContext(r.Context(), `
-		UPDATE lab_state SET effect_attempt=$1, pending_effect=$2`, attempt, action.Response == "lost"); err != nil {
+		UPDATE lab_state SET effect_attempt=$1, pending_effect=$2`, attempt, action.Response != "ok"); err != nil {
 		http.Error(w, "could not update fulfillment", http.StatusInternalServerError)
 		return
 	}
@@ -288,8 +311,8 @@ func (a *app) fulfill(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "could not record the fulfillment trace", http.StatusInternalServerError)
 		return
 	}
-	if action.Response == "lost" {
-		if err := recordTx(r.Context(), tx, "response_lost", "merchant did not receive the sink response"); err != nil {
+	if action.Response != "ok" {
+		if err := recordTx(r.Context(), tx, verification.ResponseTraceAction(action.Response), "merchant did not receive a reliable sink response"); err != nil {
 			http.Error(w, "could not record the lost response", http.StatusInternalServerError)
 			return
 		}
@@ -298,8 +321,26 @@ func (a *app) fulfill(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "could not commit fulfillment", http.StatusInternalServerError)
 		return
 	}
-	if action.Response == "lost" {
+	switch action.Response {
+	case "lost":
 		os.Exit(87)
+	case "timeout":
+		time.Sleep(4 * time.Second)
+		return
+	case "connection-reset":
+		hijacker, ok := w.(http.Hijacker)
+		if !ok {
+			http.Error(w, "connection reset is not available", http.StatusInternalServerError)
+			return
+		}
+		connection, _, err := hijacker.Hijack()
+		if err == nil {
+			_ = connection.Close()
+		}
+		return
+	case "http-500":
+		http.Error(w, "fulfillment response failed", http.StatusInternalServerError)
+		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

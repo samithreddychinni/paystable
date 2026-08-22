@@ -1,0 +1,13 @@
+{
+  "name": "tampered body changes payment state",
+  "program": "accept-untrusted-webhook",
+  "order_id": "order_tampered_1",
+  "actions": [
+    {
+      "type": "deliver",
+      "event_id": "event_tampered",
+      "status": "captured",
+      "trust": "tampered-body"
+    }
+  ]
+}

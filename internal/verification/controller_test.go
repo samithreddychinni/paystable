@@ -22,9 +22,13 @@ func TestClosedLoopScoutIsDeterministic(t *testing.T) {
 		t.Fatalf("closed-loop Scout did not pass: %#v", first.Summary)
 	}
 	feedbackUpdates, closedLoopExecutions := 0, 0
+	vulnerable := make(map[string]bool)
+	for _, program := range corpus.Programs {
+		vulnerable[program.Program] = program.ExpectedInvariant != ""
+	}
 	for _, run := range first.Runs {
 		feedbackUpdates += run.FeedbackUpdates
-		if run.Program != ProgramCorrect {
+		if vulnerable[run.Program] {
 			closedLoopExecutions += run.Executions
 		}
 	}
@@ -37,7 +41,7 @@ func TestClosedLoopScoutIsDeterministic(t *testing.T) {
 	}
 	staticExecutions := 0
 	for _, run := range static.Runs {
-		if run.Program != ProgramCorrect {
+		if vulnerable[run.Program] {
 			staticExecutions += run.Executions
 		}
 	}

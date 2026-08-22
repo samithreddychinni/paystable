@@ -1,0 +1,21 @@
+{
+  "name": "correct webhook authentication",
+  "program": "correct-security",
+  "order_id": "order_security_1",
+  "actions": [
+    {
+      "type": "deliver",
+      "event_id": "event_untrusted",
+      "status": "captured",
+      "trust": "invalid-signature"
+    },
+    {
+      "type": "deliver",
+      "event_id": "event_tampered",
+      "status": "captured",
+      "trust": "tampered-body"
+    },
+    {"type": "deliver", "event_id": "event_captured", "status": "captured"},
+    {"type": "fulfill", "response": "ok"}
+  ]
+}

@@ -19,6 +19,7 @@ services:
       dockerfile: testkit/labmerchant/Dockerfile
     environment:
       DATABASE_URL: postgres://lab:lab@postgres:5432/lab?sslmode=disable
+      LAB_WEBHOOK_SECRET: lab-webhook-secret
       PORT: 9093
     ports:
       - "9093:9093"

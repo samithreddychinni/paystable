@@ -2,6 +2,9 @@ package main
 
 import (
 	"bytes"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -24,8 +27,9 @@ type artifact struct {
 }
 
 type executor struct {
-	baseURL string
-	http    *http.Client
+	baseURL       string
+	webhookSecret string
+	http          *http.Client
 }
 
 func main() {
@@ -39,8 +43,8 @@ func main() {
 		os.Exit(1)
 	}
 	e := &executor{
-		baseURL: envOr("LAB_URL", "http://localhost:9093"),
-		http:    &http.Client{Timeout: 3 * time.Second},
+		baseURL: envOr("LAB_URL", "http://localhost:9093"), webhookSecret: envOr("LAB_WEBHOOK_SECRET", "lab-webhook-secret"),
+		http: &http.Client{Timeout: 3 * time.Second},
 	}
 	var reduction *verification.ReductionReport
 	if len(os.Args) == 4 {
@@ -85,7 +89,7 @@ func (e *executor) run(schedule verification.Schedule) (verification.Result, err
 	if err := e.waitReady(); err != nil {
 		return verification.Result{}, err
 	}
-	if err := e.post("/reset", schedule, false); err != nil {
+	if err := e.post("/reset", schedule, ""); err != nil {
 		return verification.Result{}, err
 	}
 	stopped := false
@@ -95,13 +99,13 @@ func (e *executor) run(schedule verification.Schedule) (verification.Result, err
 		}
 		switch action.Type {
 		case "deliver":
-			err := e.post("/deliver", action, action.CrashAt != "")
+			err := e.deliver(action, schedule.Program)
 			if err != nil {
 				return verification.Result{}, fmt.Errorf("action %d: %w", i+1, err)
 			}
 			stopped = action.CrashAt != ""
 		case "fulfill":
-			err := e.post("/fulfill", action, action.Response == "lost")
+			err := e.post("/fulfill", action, action.Response)
 			if err != nil {
 				return verification.Result{}, fmt.Errorf("action %d: %w", i+1, err)
 			}
@@ -134,44 +138,77 @@ func (e *executor) run(schedule verification.Schedule) (verification.Result, err
 }
 
 func verifyTrace(schedule verification.Schedule, result verification.Result) error {
-	wantCrash, wantLost, gotCrash, gotLost := 0, 0, 0, 0
+	want := make(map[string]int)
 	for _, action := range schedule.Actions {
 		if action.CrashAt != "" {
-			wantCrash++
+			want["crash"]++
 		}
-		if action.Response == "lost" {
-			wantLost++
+		if action.Response != "" && action.Response != "ok" {
+			want[verification.ResponseTraceAction(action.Response)]++
+		}
+		if action.Trust != "" && action.Trust != "valid" && schedule.Program == verification.ProgramAcceptUntrusted {
+			want["untrusted_accept"]++
 		}
 	}
+	got := make(map[string]int)
 	for _, entry := range result.Trace {
-		switch entry.Action {
-		case "crash":
-			gotCrash++
-		case "response_lost":
-			gotLost++
+		if _, tracked := want[entry.Action]; tracked {
+			got[entry.Action]++
 		}
 	}
-	if gotCrash != wantCrash || gotLost != wantLost {
-		return fmt.Errorf("trace has %d crashes and %d lost responses, want %d and %d", gotCrash, gotLost, wantCrash, wantLost)
+	for action, count := range want {
+		if got[action] != count {
+			return fmt.Errorf("trace has %d %s entries, want %d", got[action], action, count)
+		}
 	}
 	return nil
 }
 
-func (e *executor) post(path string, value any, expectDisconnect bool) error {
+func (e *executor) deliver(action verification.Action, program string) error {
+	body, err := json.Marshal(action)
+	if err != nil {
+		return err
+	}
+	signature := sign(body, e.webhookSecret)
+	switch action.Trust {
+	case "missing-signature":
+		signature = ""
+	case "invalid-signature":
+		signature = "00"
+	case "tampered-body":
+		body = append(body, ' ')
+	}
+	expected := ""
+	if action.CrashAt != "" {
+		expected = "disconnect"
+	} else if action.Trust != "" && action.Trust != "valid" && program != verification.ProgramAcceptUntrusted {
+		expected = "unauthorized"
+	}
+	return e.postBody("/deliver", body, signature, expected)
+}
+
+func (e *executor) post(path string, value any, expected string) error {
 	body, err := json.Marshal(value)
 	if err != nil {
 		return err
 	}
+	return e.postBody(path, body, "", expected)
+}
+
+func (e *executor) postBody(path string, body []byte, signature, expected string) error {
 	req, err := http.NewRequest(http.MethodPost, e.baseURL+path, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if signature != "" {
+		req.Header.Set("X-Lab-Signature", signature)
+	}
 	resp, err := e.http.Do(req)
-	if expectDisconnect {
+	if expected == "disconnect" || expected == "lost" || expected == "timeout" || expected == "connection-reset" {
 		if err == nil {
 			_ = resp.Body.Close()
-			return fmt.Errorf("merchant did not stop at the checkpoint")
+			return fmt.Errorf("merchant returned a response for %s", expected)
 		}
 		return nil
 	}
@@ -179,11 +216,23 @@ func (e *executor) post(path string, value any, expectDisconnect bool) error {
 		return err
 	}
 	defer resp.Body.Close()
+	if expected == "unauthorized" && resp.StatusCode == http.StatusUnauthorized {
+		return nil
+	}
+	if expected == "http-500" && resp.StatusCode == http.StatusInternalServerError {
+		return nil
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		message, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return fmt.Errorf("merchant returned %s: %s", resp.Status, bytes.TrimSpace(message))
 	}
 	return nil
+}
+
+func sign(body []byte, secret string) string {
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write(body)
+	return hex.EncodeToString(mac.Sum(nil))
 }
 
 func (e *executor) get(path string, value any) error {

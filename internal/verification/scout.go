@@ -20,12 +20,19 @@ var scoutFeatureNames = []string{
 	"captured_count",
 	"failed_count",
 	"crash_count",
-	"lost_response_count",
+	"uncertain_response_count",
 	"duplicate_event_count",
 	"deliver_after_restart",
-	"fulfill_after_lost_response",
+	"fulfill_after_uncertain_response",
 	"failed_after_captured",
 	"same_event_after_restart",
+	"missing_signature_count",
+	"invalid_signature_count",
+	"tampered_body_count",
+	"timeout_count",
+	"connection_reset_count",
+	"server_error_count",
+	"untrusted_captured",
 }
 
 type ScoutModel struct {
@@ -142,14 +149,20 @@ func runScoutReport(corpus ProgramCorpus, budget int, closedLoop bool) (ScoutRep
 		return ScoutReport{}, err
 	}
 	report.ModelBytes = len(modelJSON)
+	foldModels := make(map[string]ScoutModel)
 	for _, program := range corpus.Programs {
 		rankingModel := model
 		if program.ExpectedInvariant != "" {
-			rankingModel, err = trainScout(corpus, program.Family)
-			if err != nil {
-				return ScoutReport{}, err
+			var exists bool
+			rankingModel, exists = foldModels[program.Family]
+			if !exists {
+				rankingModel, err = trainScout(corpus, program.Family)
+				if err != nil {
+					return ScoutReport{}, err
+				}
+				foldModels[program.Family] = rankingModel
+				report.EvaluationFolds = append(report.EvaluationFolds, ScoutFold{HeldOutFamily: program.Family, Model: rankingModel})
 			}
-			report.EvaluationFolds = append(report.EvaluationFolds, ScoutFold{HeldOutFamily: program.Family, Model: rankingModel})
 		}
 		graph, err := CompileBehaviorGraph(program.Program, corpus.MaxScheduleActions)
 		if err != nil {
@@ -297,6 +310,14 @@ func scoutFeatures(actions []Action) []float64 {
 		switch action.Type {
 		case "deliver":
 			features[1]++
+			switch action.Trust {
+			case "missing-signature":
+				features[13]++
+			case "invalid-signature":
+				features[14]++
+			case "tampered-body":
+				features[15]++
+			}
 			if seenEvents[action.EventID] {
 				features[8]++
 			}
@@ -304,6 +325,9 @@ func scoutFeatures(actions []Action) []float64 {
 			if action.Status == "captured" {
 				features[4]++
 				capturedSeen = true
+				if action.Trust != "" && action.Trust != "valid" {
+					features[19] = 1
+				}
 			}
 			if action.Status == "failed" {
 				features[5]++
@@ -316,8 +340,16 @@ func scoutFeatures(actions []Action) []float64 {
 			}
 		case "fulfill":
 			features[2]++
-			if action.Response == "lost" {
+			if action.Response != "ok" {
 				features[7]++
+			}
+			switch action.Response {
+			case "timeout":
+				features[16]++
+			case "connection-reset":
+				features[17]++
+			case "http-500":
+				features[18]++
 			}
 		case "restart":
 			features[3]++
@@ -332,7 +364,7 @@ func scoutFeatures(actions []Action) []float64 {
 				features[12] = 1
 			}
 		}
-		if previous.Type == "fulfill" && previous.Response == "lost" && action.Type == "fulfill" {
+		if previous.Type == "fulfill" && previous.Response != "ok" && action.Type == "fulfill" {
 			features[10] = 1
 		}
 	}

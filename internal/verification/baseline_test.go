@@ -21,7 +21,7 @@ func TestBaselineReportIsDeterministicAndFindsRequiredBugs(t *testing.T) {
 	if !reflect.DeepEqual(first, second) {
 		t.Fatal("baseline report is not deterministic")
 	}
-	if len(first.Runs) != 12 || len(first.Summary) != 3 {
+	if len(first.Runs) != len(corpus.Programs)*3 || len(first.Summary) != 3 {
 		t.Fatalf("report has %d runs and %d summaries", len(first.Runs), len(first.Summary))
 	}
 	for _, summary := range first.Summary {

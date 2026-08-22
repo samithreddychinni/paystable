@@ -63,7 +63,7 @@ go run ./testkit/lab scout 50
 The report includes the final model, evaluation fold models, search runs, and
 the same summary measures as the baselines. Each fold excludes its target
 family from training. Scout uses deterministic CPU training.
-The 13-weight model does not require a GPU.
+The 20-weight model does not require a GPU.
 
 ## Run closed-loop Scout
 
@@ -121,10 +121,17 @@ output, Compose files, and the dashboard.
 |---|---|
 | `fulfillment-before-dedup.json` | `INV-2` |
 | `new-key-after-lost-response.json` | `INV-2` |
+| `new-key-after-timeout.json` | `INV-2` |
+| `new-key-after-connection-reset.json` | `INV-2` |
+| `new-key-after-server-error.json` | `INV-2` |
 | `stale-terminal-regression.json` | `INV-4` |
+| `invalid-signature.json` | `INV-SEC-1` |
+| `tampered-body.json` | `INV-SEC-1` |
+| `correct-security.json` | none |
 | `correct.json` | none |
 
-The first version runs inside one process.
+The command-line search runs inside one process.
+Docker runs the same fault contract over HTTP and PostgreSQL.
 
 ## Run against PostgreSQL and process crashes
 
@@ -144,7 +151,9 @@ The first version runs inside one process.
 
 3. Check that the artifact contains `"deterministic": true`.
 
+The merchant verifies each raw delivery body before it decodes the JSON.
 The merchant stores events, payment state, effects, and traces in PostgreSQL.
+The laboratory creates real response timeouts, connection resets, and HTTP 500 responses.
 Docker restarts the merchant after each named crash or lost response.
 
 4. Reduce a failing schedule to a 1-minimal schedule:

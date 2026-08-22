@@ -26,6 +26,7 @@ type BehaviorState struct {
 	PaymentState       string   `json:"payment_state"`
 	CapturedOnce       bool     `json:"captured_once"`
 	PendingFulfillment bool     `json:"pending_fulfillment"`
+	UntrustedAccepted  bool     `json:"untrusted_accepted"`
 	EffectCount        int      `json:"effect_count"`
 	EffectAttempt      int      `json:"effect_attempt"`
 	SeenEvents         []string `json:"seen_events"`
@@ -89,14 +90,29 @@ func behaviorActions(program string) []Action {
 	actions := []Action{
 		{Type: "deliver", EventID: "event_captured", Status: "captured"},
 		{Type: "deliver", EventID: "event_stale", Status: "failed"},
-		{Type: "fulfill", Response: "lost"},
 		{Type: "fulfill", Response: "ok"},
 		{Type: "restart"},
+	}
+	if program == ProgramCorrect || program == ProgramNewKeyOnRetry {
+		actions = slices.Insert(actions, 2, Action{Type: "fulfill", Response: "lost"})
 	}
 	if program == ProgramFulfillBeforeDedup {
 		actions = slices.Insert(actions, 1, Action{
 			Type: "deliver", EventID: "event_captured", Status: "captured", CrashAt: "after_fulfillment",
 		})
+	}
+	switch program {
+	case ProgramNewKeyOnTimeout, ProgramCorrectNetwork:
+		actions = append(actions, Action{Type: "fulfill", Response: "timeout"})
+	case ProgramNewKeyOnReset:
+		actions = append(actions, Action{Type: "fulfill", Response: "connection-reset"})
+	case ProgramNewKeyOnServerError:
+		actions = append(actions, Action{Type: "fulfill", Response: "http-500"})
+	case ProgramAcceptUntrusted, ProgramCorrectSecurity:
+		actions = append(actions,
+			Action{Type: "deliver", EventID: "event_untrusted", Status: "captured", Trust: "invalid-signature"},
+			Action{Type: "deliver", EventID: "event_tampered", Status: "captured", Trust: "tampered-body"},
+		)
 	}
 	return actions
 }
@@ -118,7 +134,8 @@ func cloneRunner(source *runner) *runner {
 func behaviorState(r *runner) BehaviorState {
 	state := BehaviorState{
 		Running: r.running, PaymentState: r.state, CapturedOnce: r.capturedOnce,
-		PendingFulfillment: r.pendingEffect, EffectCount: r.effectCount, EffectAttempt: r.effectAttempt,
+		PendingFulfillment: r.pendingEffect, UntrustedAccepted: r.untrusted,
+		EffectCount: r.effectCount, EffectAttempt: r.effectAttempt,
 		SeenEvents: []string{}, FulfillmentKeys: []string{},
 	}
 	for event := range r.seen {

@@ -1,0 +1,13 @@
+{
+  "name": "invalid signature changes payment state",
+  "program": "accept-untrusted-webhook",
+  "order_id": "order_untrusted_1",
+  "actions": [
+    {
+      "type": "deliver",
+      "event_id": "event_untrusted",
+      "status": "captured",
+      "trust": "invalid-signature"
+    }
+  ]
+}

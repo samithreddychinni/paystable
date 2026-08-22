@@ -92,9 +92,10 @@ The first benchmark will include these bug classes:
 1. Fulfillment occurs before durable webhook deduplication.
 2. A retry uses a new idempotency key after a lost response.
 3. A stale event changes a terminal payment state.
+4. An untrusted webhook changes payment state.
 
-Amount validation and signature ordering are the next bug classes.
-They are required only if the first three classes finish early.
+The retry class includes lost responses, timeouts, connection resets, and HTTP 500 responses.
+Amount validation is the next bug class.
 
 ## Evaluation gates
 
@@ -114,8 +115,11 @@ The benchmark will report these measures:
 - peak memory
 - local inference latency.
 
-Scout passes only if it beats both required baselines on held-out program families.
+Scout must find every held-out failure within 50 executions.
+Its median execution count must beat each required baseline.
+It must report no false findings and replay every finding.
 The release will publish a negative result if Scout does not pass this gate.
+All retry transport outcomes use one held-out family.
 
 ## Stretch work
 

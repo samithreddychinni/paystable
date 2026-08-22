@@ -66,9 +66,31 @@ jobs:
       - run: npm run build
         working-directory: dashboard
 
+  laboratory:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Start the Docker laboratory
+        run: docker compose -f docker-compose.lab.yml up --build -d
+      - name: Verify network and security faults
+        run: |
+          go run ./testkit/labexec testkit/lab/scenarios/new-key-after-timeout.json /tmp/timeout.json INV-2
+          go run ./testkit/labexec testkit/lab/scenarios/new-key-after-connection-reset.json /tmp/reset.json INV-2
+          go run ./testkit/labexec testkit/lab/scenarios/new-key-after-server-error.json /tmp/server-error.json INV-2
+          go run ./testkit/labexec testkit/lab/scenarios/invalid-signature.json /tmp/invalid-signature.json INV-SEC-1
+          go run ./testkit/labexec testkit/lab/scenarios/tampered-body.json /tmp/tampered-body.json INV-SEC-1
+          go run ./testkit/labexec testkit/lab/scenarios/correct-security.json /tmp/correct-security.json
+      - name: Stop the Docker laboratory
+        if: always()
+        run: docker compose -f docker-compose.lab.yml down
+
   build:
     runs-on: ubuntu-latest
-    needs: [lint, test, dashboard]
+    needs: [lint, test, dashboard, laboratory]
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6

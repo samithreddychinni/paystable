@@ -17,7 +17,7 @@ func TestDemoIsDeterministicAndComplete(t *testing.T) {
 	if !reflect.DeepEqual(first, second) {
 		t.Fatal("demo report is not deterministic")
 	}
-	if !first.Passed || len(first.Programs) != 4 || len(first.Search) != 5 {
+	if !first.Passed || len(first.Programs) != len(GenerateProgramCorpus().Programs) || len(first.Search) != 5 {
 		t.Fatalf("demo report is incomplete: %#v", first)
 	}
 	if first.RepairCheckedSchedules == 0 || first.RepairRemainingFailures != 0 || first.ScoutModelBytes == 0 {

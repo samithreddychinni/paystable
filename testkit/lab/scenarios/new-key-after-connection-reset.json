@@ -1,0 +1,10 @@
+{
+  "name": "new idempotency key after a connection reset",
+  "program": "new-key-on-reset",
+  "order_id": "order_reset_1",
+  "actions": [
+    {"type": "deliver", "event_id": "event_captured", "status": "captured"},
+    {"type": "fulfill", "response": "connection-reset"},
+    {"type": "fulfill", "response": "ok"}
+  ]
+}

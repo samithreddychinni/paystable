@@ -8,10 +8,17 @@ const (
 	ProgramCorrect                 = "correct"
 	ProgramFulfillBeforeDedup      = "fulfill-before-dedup"
 	ProgramNewKeyOnRetry           = "new-key-on-retry"
+	ProgramNewKeyOnTimeout         = "new-key-on-timeout"
+	ProgramNewKeyOnReset           = "new-key-on-reset"
+	ProgramNewKeyOnServerError     = "new-key-on-server-error"
 	ProgramTerminalRegression      = "terminal-regression"
 	ProgramTerminalStable          = "terminal-stable"
+	ProgramAcceptUntrusted         = "accept-untrusted-webhook"
+	ProgramCorrectSecurity         = "correct-security"
+	ProgramCorrectNetwork          = "correct-network"
 	InvariantFulfillmentAtMostOnce = "INV-2"
 	InvariantTerminalStateStable   = "INV-4"
+	InvariantTrustedEventsOnly     = "INV-SEC-1"
 )
 
 type Schedule struct {
@@ -27,6 +34,7 @@ type Action struct {
 	Status   string `json:"status,omitempty"`
 	CrashAt  string `json:"crash_at,omitempty"`
 	Response string `json:"response,omitempty"`
+	Trust    string `json:"trust,omitempty"`
 }
 
 type TraceEntry struct {
@@ -59,6 +67,7 @@ type runner struct {
 	state         string
 	capturedOnce  bool
 	pendingEffect bool
+	untrusted     bool
 	effects       map[string]bool
 	effectCount   int
 	effectAttempt int
@@ -100,6 +109,15 @@ func ResultFor(schedule Schedule, finalState string, capturedOnce bool, effectCo
 			Detail:    fmt.Sprintf("captured order %s regressed to %s", schedule.OrderID, finalState),
 		})
 	}
+	for _, entry := range trace {
+		if entry.Action == "untrusted_accept" {
+			result.Violations = append(result.Violations, Violation{
+				Invariant: InvariantTrustedEventsOnly,
+				Detail:    fmt.Sprintf("order %s accepted an untrusted payment event", schedule.OrderID),
+			})
+			break
+		}
+	}
 	return result
 }
 
@@ -117,6 +135,9 @@ func Validate(schedule Schedule) error {
 			if action.EventID == "" || (action.Status != "captured" && action.Status != "failed") {
 				return fmt.Errorf("action %d has an invalid payment event", i+1)
 			}
+			if action.Trust != "" && action.Trust != "valid" && action.Trust != "missing-signature" && action.Trust != "invalid-signature" && action.Trust != "tampered-body" {
+				return fmt.Errorf("action %d has an invalid trust condition", i+1)
+			}
 			if action.Response != "" {
 				return fmt.Errorf("action %d has fields that deliver does not use", i+1)
 			}
@@ -124,14 +145,14 @@ func Validate(schedule Schedule) error {
 				return fmt.Errorf("action %d has an invalid crash checkpoint", i+1)
 			}
 		case "fulfill":
-			if action.EventID != "" || action.Status != "" || action.CrashAt != "" {
+			if action.EventID != "" || action.Status != "" || action.CrashAt != "" || action.Trust != "" {
 				return fmt.Errorf("action %d has fields that fulfill does not use", i+1)
 			}
-			if action.Response != "ok" && action.Response != "lost" {
+			if action.Response != "ok" && action.Response != "lost" && action.Response != "timeout" && action.Response != "connection-reset" && action.Response != "http-500" {
 				return fmt.Errorf("action %d has an invalid fulfillment response", i+1)
 			}
 		case "restart":
-			if action.EventID != "" || action.Status != "" || action.CrashAt != "" || action.Response != "" {
+			if action.EventID != "" || action.Status != "" || action.CrashAt != "" || action.Response != "" || action.Trust != "" {
 				return fmt.Errorf("action %d has fields that restart does not use", i+1)
 			}
 		default:
@@ -143,7 +164,9 @@ func Validate(schedule Schedule) error {
 
 func supportedProgram(program string) bool {
 	switch program {
-	case ProgramCorrect, ProgramFulfillBeforeDedup, ProgramNewKeyOnRetry, ProgramTerminalRegression, ProgramTerminalStable:
+	case ProgramCorrect, ProgramFulfillBeforeDedup, ProgramNewKeyOnRetry, ProgramNewKeyOnTimeout,
+		ProgramNewKeyOnReset, ProgramNewKeyOnServerError, ProgramTerminalRegression,
+		ProgramTerminalStable, ProgramAcceptUntrusted, ProgramCorrectSecurity, ProgramCorrectNetwork:
 		return true
 	}
 	return false
@@ -170,6 +193,15 @@ func (r *runner) deliver(action Action) error {
 	if r.seen[action.EventID] {
 		r.record("deliver", "duplicate event ignored")
 		return nil
+	}
+	trusted := action.Trust == "" || action.Trust == "valid"
+	if !trusted && r.schedule.Program != ProgramAcceptUntrusted {
+		r.record("reject", "untrusted payment event rejected")
+		return nil
+	}
+	if !trusted {
+		r.untrusted = true
+		r.record("untrusted_accept", "untrusted payment event accepted")
 	}
 
 	if r.schedule.Program == ProgramFulfillBeforeDedup && action.Status == "captured" {
@@ -207,7 +239,7 @@ func (r *runner) fulfill(action Action) error {
 	}
 	r.effectAttempt++
 	key := r.schedule.OrderID
-	if r.schedule.Program == ProgramNewKeyOnRetry {
+	if UsesNewKey(r.schedule.Program) {
 		key = fmt.Sprintf("%s:%d", key, r.effectAttempt)
 	}
 	if !r.effects[key] {
@@ -215,12 +247,35 @@ func (r *runner) fulfill(action Action) error {
 		r.effectCount++
 	}
 	r.record("fulfill", "fulfillment sink accepted key "+key)
-	if action.Response == "lost" {
-		r.record("response_lost", "merchant did not receive the sink response")
+	if action.Response != "ok" {
+		r.record(ResponseTraceAction(action.Response), "merchant did not receive a reliable sink response")
 		return nil
 	}
 	r.pendingEffect = false
 	return nil
+}
+
+// UsesNewKey reports whether a program changes its fulfillment key after a retry.
+func UsesNewKey(program string) bool {
+	switch program {
+	case ProgramNewKeyOnRetry, ProgramNewKeyOnTimeout, ProgramNewKeyOnReset, ProgramNewKeyOnServerError:
+		return true
+	}
+	return false
+}
+
+// ResponseTraceAction returns the trace action for an uncertain response.
+func ResponseTraceAction(response string) string {
+	switch response {
+	case "timeout":
+		return "response_timeout"
+	case "connection-reset":
+		return "connection_reset"
+	case "http-500":
+		return "response_http_500"
+	default:
+		return "response_lost"
+	}
 }
 
 func (r *runner) record(action, detail string) {

@@ -21,8 +21,14 @@ func TestScoutIsDeterministicAndBeatsBaselineMedian(t *testing.T) {
 	if first.Summary.SuccessAt50 != 1 || first.Summary.FalseFindingCount != 0 || first.Summary.DeterministicReplayRate != 1 {
 		t.Fatalf("Scout did not pass: %#v", first.Summary)
 	}
-	if len(first.EvaluationFolds) != 3 {
-		t.Fatalf("Scout report has %d evaluation folds, want 3", len(first.EvaluationFolds))
+	families := make(map[string]bool)
+	for _, program := range corpus.Programs {
+		if program.ExpectedInvariant != "" {
+			families[program.Family] = true
+		}
+	}
+	if len(first.EvaluationFolds) != len(families) {
+		t.Fatalf("Scout report has %d evaluation folds, want %d", len(first.EvaluationFolds), len(families))
 	}
 	baselines, err := RunBaselineReport(corpus, 50, 7)
 	if err != nil {

@@ -1,0 +1,10 @@
+{
+  "name": "new idempotency key after a response timeout",
+  "program": "new-key-on-timeout",
+  "order_id": "order_timeout_1",
+  "actions": [
+    {"type": "deliver", "event_id": "event_captured", "status": "captured"},
+    {"type": "fulfill", "response": "timeout"},
+    {"type": "fulfill", "response": "ok"}
+  ]
+}
