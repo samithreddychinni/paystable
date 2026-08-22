@@ -1,3 +1,11 @@
+# ⚠️ This branch is vibe coded
+
+> [!WARNING]
+> AI-assisted coding produced most changes in this branch.
+> Review and test every change before you use this code in production.
+
+---
+
 # paystable
 
 > a payment state stabilizer for teams that cannot afford to trust one webhook too early.
