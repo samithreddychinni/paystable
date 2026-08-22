@@ -131,6 +131,37 @@ type ReplayWindowReport struct {
 	CorrectControlViolations int     `json:"correct_control_violations"`
 }
 
+type ReplayV3Report struct {
+	Version               int            `json:"version"`
+	Evaluation            string         `json:"evaluation"`
+	FixedPriors           bool           `json:"fixed_priors"`
+	FeatureName           string         `json:"feature_name"`
+	TrainingSafeDelays    []int64        `json:"training_safe_delays"`
+	TrainingFailureDelays []int64        `json:"training_failure_delays"`
+	ReplayTrainingPairs   int            `json:"replay_training_pairs"`
+	BaseModelBytes        int            `json:"base_model_bytes"`
+	ModelBytes            int            `json:"model_bytes"`
+	Model                 ScoutModel     `json:"model"`
+	Cases                 []ReplayV3Case `json:"cases"`
+	PairwiseWins          int            `json:"pairwise_wins"`
+	PairCount             int            `json:"pair_count"`
+	BaseScoreTies         int            `json:"base_score_ties"`
+}
+
+type ReplayV3Case struct {
+	Name                     string  `json:"name"`
+	SafeDelaySeconds         int64   `json:"safe_delay_seconds"`
+	FailureDelaySeconds      int64   `json:"failure_delay_seconds"`
+	SequenceNoise            bool    `json:"sequence_noise"`
+	SafeScore                float64 `json:"safe_score"`
+	FailureScore             float64 `json:"failure_score"`
+	PairwiseWin              bool    `json:"pairwise_win"`
+	BaseScoresTied           bool    `json:"base_scores_tied"`
+	DeterministicReplay      bool    `json:"deterministic_replay"`
+	ReducedActions           int     `json:"reduced_actions"`
+	CorrectControlViolations int     `json:"correct_control_violations"`
+}
+
 // TrainScout fits a linear pairwise ranker to deterministic invariant results.
 func TrainScout(corpus ProgramCorpus) (ScoutModel, error) {
 	return trainScout(corpus, "")
@@ -290,19 +321,9 @@ func RunReplayWindowReport(corpus ProgramCorpus) (ReplayWindowReport, error) {
 	if err != nil {
 		return ReplayWindowReport{}, err
 	}
-	replay := func(name, program string, seconds int64) Schedule {
-		return Schedule{
-			Name: name, Program: program, OrderID: "order_replay_window",
-			Actions: []Action{
-				{Type: "deliver", EventID: "event_replay", Status: "captured"},
-				{Type: "advance", AdvanceSeconds: seconds},
-				{Type: "deliver", EventID: "event_replay", Status: "captured"},
-			},
-		}
-	}
-	failureSchedule := replay("expired event claim accepts a replay", ProgramExpiringEventClaim, EventClaimRetentionSeconds+1)
-	safeSchedule := replay("active event claim rejects a replay", ProgramExpiringEventClaim, 3600)
-	correctSchedule := replay("durable event claim rejects a delayed replay", ProgramDurableEventClaim, EventClaimRetentionSeconds+1)
+	failureSchedule := replayWindowSchedule("expired event claim accepts a replay", ProgramExpiringEventClaim, EventClaimRetentionSeconds+1, false)
+	safeSchedule := replayWindowSchedule("active event claim rejects a replay", ProgramExpiringEventClaim, 3600, false)
+	correctSchedule := replayWindowSchedule("durable event claim rejects a delayed replay", ProgramDurableEventClaim, EventClaimRetentionSeconds+1, false)
 	failure, err := Run(failureSchedule)
 	if err != nil {
 		return ReplayWindowReport{}, err
@@ -339,6 +360,168 @@ func RunReplayWindowReport(corpus ProgramCorpus) (ReplayWindowReport, error) {
 		OriginalActions:     len(failureSchedule.Actions), ReducedActions: len(reduced.Actions),
 		CorrectControlViolations: len(correct.Violations),
 	}, nil
+}
+
+// RunReplayV3Report trains one time feature and tests unseen delay values.
+func RunReplayV3Report(corpus ProgramCorpus) (ReplayV3Report, error) {
+	base, model, safeTraining, failureTraining, replayPairs, err := trainReplayScoutV3(corpus)
+	if err != nil {
+		return ReplayV3Report{}, err
+	}
+	baseJSON, err := json.Marshal(base)
+	if err != nil {
+		return ReplayV3Report{}, err
+	}
+	modelJSON, err := json.Marshal(model)
+	if err != nil {
+		return ReplayV3Report{}, err
+	}
+	tests := []struct {
+		name          string
+		safe, failure int64
+		noise         bool
+	}{
+		{"near boundary", EventClaimRetentionSeconds - 1, EventClaimRetentionSeconds + 1, false},
+		{"boundary margin", EventClaimRetentionSeconds - 600, EventClaimRetentionSeconds + 600, false},
+		{"sequence noise", 64800, 259200, true},
+	}
+	report := ReplayV3Report{
+		Version: 1, Evaluation: "held-out-replay-retention-v3", FixedPriors: false,
+		FeatureName: "duplicate_event_delay_ratio", TrainingSafeDelays: safeTraining,
+		TrainingFailureDelays: failureTraining, ReplayTrainingPairs: replayPairs,
+		BaseModelBytes: len(baseJSON), ModelBytes: len(modelJSON), Model: model, PairCount: len(tests),
+	}
+	for _, test := range tests {
+		failureSchedule := replayWindowSchedule(test.name+" failure", ProgramExpiringEventClaim, test.failure, test.noise)
+		safeSchedule := replayWindowSchedule(test.name+" control", ProgramExpiringEventClaim, test.safe, test.noise)
+		correctSchedule := replayWindowSchedule(test.name+" correct control", ProgramDurableEventClaim, test.failure, test.noise)
+		failure, err := Run(failureSchedule)
+		if err != nil {
+			return ReplayV3Report{}, err
+		}
+		repeated, err := Run(failureSchedule)
+		if err != nil {
+			return ReplayV3Report{}, err
+		}
+		safe, err := Run(safeSchedule)
+		if err != nil {
+			return ReplayV3Report{}, err
+		}
+		correct, err := Run(correctSchedule)
+		if err != nil {
+			return ReplayV3Report{}, err
+		}
+		if !resultHasInvariant(failure, InvariantFulfillmentAtMostOnce) || len(safe.Violations) != 0 || len(correct.Violations) != 0 {
+			return ReplayV3Report{}, fmt.Errorf("Scout v3 replay controls produced an invalid result")
+		}
+		reduced, _, err := Reduce(failureSchedule, InvariantFulfillmentAtMostOnce, Run)
+		if err != nil {
+			return ReplayV3Report{}, err
+		}
+		failureScore := scoutScore(model.Weights, scoutV3Features(failureSchedule.Actions))
+		safeScore := scoutScore(model.Weights, scoutV3Features(safeSchedule.Actions))
+		baseTied := base.score(failureSchedule.Actions) == base.score(safeSchedule.Actions)
+		pairwiseWin := failureScore > safeScore
+		if pairwiseWin {
+			report.PairwiseWins++
+		}
+		if baseTied {
+			report.BaseScoreTies++
+		}
+		report.Cases = append(report.Cases, ReplayV3Case{
+			Name: test.name, SafeDelaySeconds: test.safe, FailureDelaySeconds: test.failure,
+			SequenceNoise: test.noise, SafeScore: safeScore, FailureScore: failureScore,
+			PairwiseWin: pairwiseWin, BaseScoresTied: baseTied,
+			DeterministicReplay: reflect.DeepEqual(failure, repeated), ReducedActions: len(reduced.Actions),
+			CorrectControlViolations: len(correct.Violations),
+		})
+	}
+	return report, nil
+}
+
+func replayWindowSchedule(name, program string, seconds int64, noise bool) Schedule {
+	actions := []Action{
+		{Type: "deliver", EventID: "event_replay", Status: "captured"},
+		{Type: "advance", AdvanceSeconds: seconds},
+	}
+	if noise {
+		actions = append(actions, Action{Type: "deliver", EventID: "event_noise", Status: "failed"})
+	}
+	actions = append(actions, Action{Type: "deliver", EventID: "event_replay", Status: "captured"})
+	return Schedule{Name: name, Program: program, OrderID: "order_replay_window", Actions: actions}
+}
+
+func trainReplayScoutV3(corpus ProgramCorpus) (ScoutModel, ScoutModel, []int64, []int64, int, error) {
+	base, err := trainScoutWithPriors(corpus, "", false)
+	if err != nil {
+		return ScoutModel{}, ScoutModel{}, nil, nil, 0, err
+	}
+	model := base
+	model.Version = 3
+	model.FeatureNames = append(slices.Clone(base.FeatureNames), "duplicate_event_delay_ratio")
+	model.Weights = append(slices.Clone(base.Weights), 0)
+	safeDelays := []int64{3600, 43200, 82800}
+	failureDelays := []int64{90000, 172800, 432000}
+	type pair struct{ positive, negative []float64 }
+	var positives, negatives [][]float64
+	for _, delay := range append(slices.Clone(safeDelays), failureDelays...) {
+		schedule := replayWindowSchedule("Scout v3 training schedule", ProgramExpiringEventClaim, delay, false)
+		result, err := Run(schedule)
+		if err != nil {
+			return ScoutModel{}, ScoutModel{}, nil, nil, 0, err
+		}
+		features := scoutV3Features(schedule.Actions)
+		if resultHasInvariant(result, InvariantFulfillmentAtMostOnce) {
+			positives = append(positives, features)
+		} else {
+			negatives = append(negatives, features)
+		}
+	}
+	if len(positives) != len(failureDelays) || len(negatives) != len(safeDelays) {
+		return ScoutModel{}, ScoutModel{}, nil, nil, 0, fmt.Errorf("Scout v3 training labels do not match the replay controls")
+	}
+	pairs := make([]pair, 0, len(positives)*len(negatives))
+	for _, positive := range positives {
+		for _, negative := range negatives {
+			pairs = append(pairs, pair{positive: positive, negative: negative})
+		}
+	}
+	model.TrainingPairs += len(pairs)
+	featureIndex := len(model.Weights) - 1
+	for range model.Epochs {
+		for _, pair := range pairs {
+			if scoutScore(model.Weights, pair.positive)-scoutScore(model.Weights, pair.negative) >= 1 {
+				continue
+			}
+			model.Weights[featureIndex] += model.LearningRate * (pair.positive[featureIndex] - pair.negative[featureIndex])
+		}
+	}
+	return base, model, safeDelays, failureDelays, len(pairs), nil
+}
+
+func scoutV3Features(actions []Action) []float64 {
+	features := append(slices.Clone(scoutFeatures(actions)), 0)
+	seenAt := make(map[string]int64)
+	var elapsed int64
+	for _, action := range actions {
+		if action.Type == "advance" {
+			elapsed += action.AdvanceSeconds
+			continue
+		}
+		if action.Type != "deliver" {
+			continue
+		}
+		first, seen := seenAt[action.EventID]
+		if !seen {
+			seenAt[action.EventID] = elapsed
+			continue
+		}
+		ratio := float64(elapsed-first) / float64(EventClaimRetentionSeconds)
+		if ratio > features[len(features)-1] {
+			features[len(features)-1] = ratio
+		}
+	}
+	return features
 }
 
 // RunPriorFreeStressReport shuffles score ties across repeated held-out trials.

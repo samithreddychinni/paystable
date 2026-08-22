@@ -133,6 +133,36 @@ func TestReplayWindowChallengeExposesScoutBlindSpot(t *testing.T) {
 	}
 }
 
+func TestReplayScoutV3RanksHeldOutDelays(t *testing.T) {
+	first, err := RunReplayV3Report(GenerateProgramCorpus())
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := RunReplayV3Report(GenerateProgramCorpus())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(first, second) {
+		t.Fatal("Scout v3 replay report is not deterministic")
+	}
+	if first.PairwiseWins != first.PairCount || first.BaseScoreTies != first.PairCount || first.Model.Version != 3 {
+		t.Fatalf("Scout v3 did not improve replay ranking: %#v", first)
+	}
+	if first.Model.Weights[len(first.Model.Weights)-1] <= 0 {
+		t.Fatal("Scout v3 did not learn a replay-delay weight")
+	}
+	for _, test := range first.Cases {
+		for _, delay := range append(slices.Clone(first.TrainingSafeDelays), first.TrainingFailureDelays...) {
+			if test.SafeDelaySeconds == delay || test.FailureDelaySeconds == delay {
+				t.Fatalf("evaluation delay %d appears in training", delay)
+			}
+		}
+		if !test.DeterministicReplay || test.CorrectControlViolations != 0 || test.ReducedActions != 3 {
+			t.Fatalf("Scout v3 case is invalid: %#v", test)
+		}
+	}
+}
+
 func priorFreeTestCorpus() ProgramCorpus {
 	full := GenerateProgramCorpus()
 	corpus := ProgramCorpus{Version: full.Version, MaxScheduleActions: full.MaxScheduleActions}

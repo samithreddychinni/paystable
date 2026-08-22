@@ -117,6 +117,24 @@ A durable event claim rejects the same replay.
 Scout gives the failure and its matched safe delay the same score.
 This negative result identifies a feature gap before retraining.
 
+Train and test Scout v3:
+
+```bash
+go run ./testkit/lab replay-window-v3
+```
+
+Scout v3 keeps the 24 Scout v2 weights.
+It learns one replay-delay weight from nine matched training pairs.
+The deterministic invariant labels each training schedule.
+The report uses three unseen delay pairs.
+One pair includes an unrelated failed event as sequence noise.
+Scout v2 ties all three pairs.
+Scout v3 ranks all three failure delays above their controls.
+The Scout v3 model is 1,045 bytes.
+The deterministic invariant remains the finding authority.
+The report uses the in-process test clock and one simulated retention policy.
+It does not test a database cleanup job or system clock skew.
+
 ## Run the independent benchmark
 
 Evaluate all methods against merchant implementations outside the training simulator:
