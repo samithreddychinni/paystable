@@ -79,6 +79,14 @@ type app struct {
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "shadow-check" {
+		if err := runShadowCheck(); err != nil {
+			slog.Error("shadow check failed", "error", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	a := &app{
 		keyID:          os.Getenv("RAZORPAY_KEY_ID"),
 		keySecret:      os.Getenv("RAZORPAY_KEY_SECRET"),
@@ -112,6 +120,125 @@ func main() {
 		slog.Error("Razorpay test merchant stopped", "error", err)
 		os.Exit(1)
 	}
+}
+
+type shadowEvent struct {
+	Event        string `json:"event"`
+	Status       string `json:"status"`
+	Amount       int64  `json:"amount"`
+	Currency     string `json:"currency"`
+	HasPaymentID bool   `json:"has_payment_id"`
+	HasOrderID   bool   `json:"has_order_id"`
+}
+
+type shadowReport struct {
+	FixtureSignatureValid          bool        `json:"fixture_signature_valid"`
+	SignedNoiseSignatureValid      bool        `json:"signed_noise_signature_valid"`
+	ChangedBodySignatureRejected   bool        `json:"changed_body_signature_rejected"`
+	ChangedAmountSignatureRejected bool        `json:"changed_amount_signature_rejected"`
+	SanitizedEvent                 shadowEvent `json:"sanitized_event"`
+}
+
+func runShadowCheck() error {
+	fixturePath := envOr("RAZORPAY_FIXTURE_PATH", "artifacts/razorpay-webhook.json")
+	fixture, err := os.ReadFile(fixturePath)
+	if err != nil {
+		return fmt.Errorf("read the local webhook fixture: %w", err)
+	}
+	report, err := checkShadowFixture(fixture, os.Getenv("RAZORPAY_WEBHOOK_SECRET"))
+	if err != nil {
+		return err
+	}
+	return json.NewEncoder(os.Stdout).Encode(report)
+}
+
+func checkShadowFixture(data []byte, secret string) (shadowReport, error) {
+	var fixture struct {
+		Signature  string `json:"signature"`
+		BodyBase64 string `json:"body_base64"`
+	}
+	if err := json.Unmarshal(data, &fixture); err != nil {
+		return shadowReport{}, fmt.Errorf("decode the local webhook fixture: %w", err)
+	}
+	body, err := base64.StdEncoding.DecodeString(fixture.BodyBase64)
+	if err != nil {
+		return shadowReport{}, fmt.Errorf("decode the webhook body: %w", err)
+	}
+	if !razorpay.VerifyWebhookSignature(body, fixture.Signature, secret) {
+		return shadowReport{}, fmt.Errorf("the webhook fixture signature is invalid")
+	}
+
+	event, payload, err := sanitizeShadowEvent(body)
+	if err != nil {
+		return shadowReport{}, err
+	}
+	payment := payload["payload"].(map[string]any)["payment"].(map[string]any)["entity"].(map[string]any)
+
+	payload["shadow_noise"] = map[string]any{"optional": true}
+	noisyBody, err := json.Marshal(payload)
+	if err != nil {
+		return shadowReport{}, fmt.Errorf("encode the noisy webhook: %w", err)
+	}
+	noisyEvent, _, err := sanitizeShadowEvent(noisyBody)
+	if err != nil {
+		return shadowReport{}, err
+	}
+
+	payment["amount"] = event.Amount + 1
+	tamperedBody, err := json.Marshal(payload)
+	if err != nil {
+		return shadowReport{}, fmt.Errorf("encode the changed webhook: %w", err)
+	}
+
+	return shadowReport{
+		FixtureSignatureValid:          true,
+		SignedNoiseSignatureValid:      razorpay.VerifyWebhookSignature(noisyBody, signWebhook(noisyBody, secret), secret) && noisyEvent == event,
+		ChangedBodySignatureRejected:   !razorpay.VerifyWebhookSignature(noisyBody, fixture.Signature, secret),
+		ChangedAmountSignatureRejected: !razorpay.VerifyWebhookSignature(tamperedBody, fixture.Signature, secret),
+		SanitizedEvent:                 event,
+	}, nil
+}
+
+func sanitizeShadowEvent(body []byte) (shadowEvent, map[string]any, error) {
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return shadowEvent{}, nil, fmt.Errorf("decode the webhook payload: %w", err)
+	}
+	payloadValue, ok := payload["payload"].(map[string]any)
+	if !ok {
+		return shadowEvent{}, nil, fmt.Errorf("the webhook payload is missing")
+	}
+	paymentValue, ok := payloadValue["payment"].(map[string]any)
+	if !ok {
+		return shadowEvent{}, nil, fmt.Errorf("the webhook payment is missing")
+	}
+	entity, ok := paymentValue["entity"].(map[string]any)
+	if !ok {
+		return shadowEvent{}, nil, fmt.Errorf("the webhook payment entity is missing")
+	}
+	amount, ok := entity["amount"].(float64)
+	if !ok {
+		return shadowEvent{}, nil, fmt.Errorf("the webhook payment amount is missing")
+	}
+	return shadowEvent{
+		Event:        stringValue(payload["event"]),
+		Status:       stringValue(entity["status"]),
+		Amount:       int64(amount),
+		Currency:     stringValue(entity["currency"]),
+		HasPaymentID: stringValue(entity["id"]) != "",
+		HasOrderID:   stringValue(entity["order_id"]) != "",
+	}, payload, nil
+}
+
+func signWebhook(body []byte, secret string) string {
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write(body)
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+func stringValue(value any) string {
+	text, _ := value.(string)
+	return text
 }
 
 func (a *app) index(w http.ResponseWriter, _ *http.Request) {

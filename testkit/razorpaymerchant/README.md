@@ -66,5 +66,17 @@ Its documentation recommends zrok for local webhook testing.
     artifacts/razorpay-webhook.json
     ```
 
+14. Run the privacy-safe shadow check:
+
+    ```bash
+    go run ./testkit/razorpaymerchant shadow-check
+    ```
+
+The shadow check reads the local signed fixture.
+It prints only event semantics and identifier presence flags.
+It does not print the raw body, signature, event ID, payment ID, order ID, or customer data.
+It verifies a correctly signed payload with an extra field.
+It also verifies that the original signature rejects body and amount changes.
+
 The Checkout result does not fulfill the order.
 Paystable waits for the signed webhook and confirms the payment through the Razorpay API.

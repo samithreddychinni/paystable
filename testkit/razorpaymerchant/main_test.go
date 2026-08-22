@@ -108,3 +108,30 @@ func TestCreateOrderAndVerifyCheckout(t *testing.T) {
 		t.Fatalf("accept callback returned %d with %d effects", recorder.Code, len(a.effects))
 	}
 }
+
+func TestShadowCheckRemovesPrivateDataAndRejectsChanges(t *testing.T) {
+	secret := "webhook-secret"
+	body := []byte(`{"event":"payment.captured","payload":{"payment":{"entity":{"id":"pay_private","order_id":"order_private","status":"captured","amount":49900,"currency":"INR","email":"private@example.test","contact":"9999999999"}}}}`)
+	fixture, err := json.Marshal(map[string]string{
+		"signature": signWebhook(body, secret), "body_base64": base64.StdEncoding.EncodeToString(body),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	report, err := checkShadowFixture(fixture, secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, private := range []string{"pay_private", "order_private", "private@example.test", "9999999999", secret} {
+		if strings.Contains(string(encoded), private) {
+			t.Fatalf("shadow report contains private data")
+		}
+	}
+	if !report.FixtureSignatureValid || !report.SignedNoiseSignatureValid || !report.ChangedBodySignatureRejected || !report.ChangedAmountSignatureRejected {
+		t.Fatalf("shadow report failed: %+v", report)
+	}
+}

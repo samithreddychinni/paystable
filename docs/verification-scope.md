@@ -210,5 +210,9 @@ The independent merchants are repository-authored.
 One genuine Test Mode webhook proves the signed integration path.
 These results do not describe an unknown production traffic distribution.
 
+The local shadow check removes identifiers and customer data from its report.
+It checks signed extra fields and rejects changes that reuse the original signature.
+One Test Mode fixture does not represent production traffic diversity.
+
 Run the prior-free stress report before you publish benchmark claims.
 Use sanitized shadow traffic and external merchant implementations before a production claim.
