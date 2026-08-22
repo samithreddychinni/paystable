@@ -49,3 +49,18 @@ func TestClosedLoopScoutIsDeterministic(t *testing.T) {
 		t.Fatalf("closed loop used %d executions, static Scout used %d", closedLoopExecutions, staticExecutions)
 	}
 }
+
+func TestClosedLoopScoutPrefersAnUnseenInputProfile(t *testing.T) {
+	seen := Action{Type: "deliver", EventID: "captured", Status: "captured"}
+	unseen := Action{Type: "deliver", EventID: "failed", Status: "failed"}
+	candidates := []searchCandidate{
+		{actions: []Action{seen}, profile: scoutProfile([]Action{seen})},
+		{actions: []Action{unseen}, profile: scoutProfile([]Action{unseen})},
+	}
+	rankClosedLoopCandidates(candidates, ScoutModel{Weights: make([]float64, len(scoutFeatureNames))}, nil, map[string]bool{
+		scoutProfile([]Action{seen}): true,
+	})
+	if candidates[0].actions[0] != unseen {
+		t.Fatal("closed-loop Scout did not prefer the unseen input profile")
+	}
+}

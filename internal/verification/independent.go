@@ -320,7 +320,10 @@ func enumerateIndependentCandidates(testCase independentCase, maxActions int) ([
 					features = append(features, observableStateFeature(entry.State, entry.EffectCount))
 				}
 				terminal := fmt.Sprintf("%s|%d|%#v", result.FinalState, result.EffectCount, result.Violations)
-				candidates = append(candidates, searchCandidate{actions: slices.Clone(actions), features: features, terminal: terminal})
+				candidateActions := slices.Clone(actions)
+				candidates = append(candidates, searchCandidate{
+					actions: candidateActions, features: features, terminal: terminal, profile: scoutProfile(candidateActions),
+				})
 				return
 			}
 			for _, action := range testCase.actions {

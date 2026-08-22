@@ -209,10 +209,12 @@ func evaluateClosedLoopWith(program ProgramCase, candidates []searchCandidate, b
 	run := BaselineRun{Method: ScoutClosedLoopMethod, Program: program.Program}
 	seenBehavior := make(map[string]bool)
 	seenCoverage := make(map[string]bool)
+	seenProfiles := make(map[string]bool)
 	for len(remaining) != 0 && run.Executions < budget {
-		rankClosedLoopCandidates(remaining, model, seenCoverage)
+		rankClosedLoopCandidates(remaining, model, seenCoverage, seenProfiles)
 		candidate := remaining[0]
 		remaining = remaining[1:]
+		seenProfiles[candidate.profile] = true
 		run.Executions++
 		if seenBehavior[candidate.terminal] {
 			run.RedundantSchedules++
@@ -263,12 +265,24 @@ func rankScoutCandidates(candidates []searchCandidate, model ScoutModel) {
 	})
 }
 
-func rankClosedLoopCandidates(candidates []searchCandidate, model ScoutModel, seenCoverage map[string]bool) {
+func rankClosedLoopCandidates(candidates []searchCandidate, model ScoutModel, seenCoverage, seenProfiles map[string]bool) {
 	slices.SortStableFunc(candidates, func(a, b searchCandidate) int {
+		aSeen := seenProfiles[a.profile]
+		bSeen := seenProfiles[b.profile]
+		if aSeen != bSeen {
+			if aSeen {
+				return 1
+			}
+			return -1
+		}
 		aScore := model.score(a.actions) + coverageBonus(a, seenCoverage)
 		bScore := model.score(b.actions) + coverageBonus(b, seenCoverage)
 		return -compareFloat(aScore, bScore)
 	})
+}
+
+func scoutProfile(actions []Action) string {
+	return fmt.Sprint(scoutFeatures(actions))
 }
 
 func coverageBonus(candidate searchCandidate, seenCoverage map[string]bool) float64 {

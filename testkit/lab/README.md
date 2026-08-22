@@ -75,6 +75,8 @@ go run ./testkit/lab closed-loop 50
 
 After each non-finding run, Scout records new trace states and updates its
 weights. The invariant checks remain the only finding authority.
+Scout also ranks unseen input profiles before repeated profiles.
+This rule uses schedule features only. It does not use hidden result labels.
 
 ## Run the independent benchmark
 

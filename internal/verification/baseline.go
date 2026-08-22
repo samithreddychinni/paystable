@@ -51,6 +51,7 @@ type searchCandidate struct {
 	actions  []Action
 	features []string
 	terminal string
+	profile  string
 }
 
 // RunBaselineReport evaluates all non-model search methods with one execution budget.
@@ -162,7 +163,9 @@ func graphCandidates(graph BehaviorGraph) []searchCandidate {
 				next = append(next, path{node: edge.To, actions: actions, features: features})
 				if graph.Nodes[edge.To].State.Running {
 					terminal := fmt.Sprintf("%#v", state)
-					candidates = append(candidates, searchCandidate{actions: actions, features: features, terminal: terminal})
+					candidates = append(candidates, searchCandidate{
+						actions: actions, features: features, terminal: terminal, profile: scoutProfile(actions),
+					})
 				}
 			}
 		}
