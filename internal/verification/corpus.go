@@ -17,7 +17,7 @@ type ProgramCase struct {
 
 // GenerateProgramCorpus returns the executable programs and their canonical schedules.
 func GenerateProgramCorpus() ProgramCorpus {
-	return ProgramCorpus{Version: 6, MaxScheduleActions: 4, Programs: []ProgramCase{
+	return ProgramCorpus{Version: 7, MaxScheduleActions: 4, Programs: []ProgramCase{
 		{
 			Family: "deduplication-order", Program: ProgramFulfillBeforeDedup,
 			GroundTruth: Schedule{
@@ -176,6 +176,16 @@ func GenerateProgramCorpus() ProgramCorpus {
 			ExpectedInvariant: InvariantExpectedOrder, ExpectedFinalState: "captured", ExpectedEffectCount: 0,
 		},
 		{
+			Family: "payment-currency", Program: ProgramAcceptWrongCurrency,
+			GroundTruth: Schedule{
+				Name: "payment currency mismatch is accepted", Program: ProgramAcceptWrongCurrency, OrderID: "order_corpus_currency_1",
+				Actions: []Action{{
+					Type: "deliver", EventID: "event_wrong_currency", Status: "captured", Currency: "USD",
+				}},
+			},
+			ExpectedInvariant: InvariantExpectedCurrency, ExpectedFinalState: "captured", ExpectedEffectCount: 0,
+		},
+		{
 			Family: "correct", Program: ProgramCorrect,
 			GroundTruth: Schedule{
 				Name: "correct payment handling", Program: ProgramCorrect, OrderID: "order_corpus_8",
@@ -219,6 +229,18 @@ func GenerateProgramCorpus() ProgramCorpus {
 				Name: "payment order mismatch is rejected", Program: ProgramCorrectOrder, OrderID: "order_corpus_binding_2",
 				Actions: []Action{
 					{Type: "deliver", EventID: "event_wrong_order", Status: "captured", PaymentOrderID: "order_other"},
+					{Type: "deliver", EventID: "event_captured", Status: "captured"},
+					{Type: "fulfill", Response: "ok"},
+				},
+			},
+			ExpectedFinalState: "captured", ExpectedEffectCount: 1,
+		},
+		{
+			Family: "correct-currency", Program: ProgramCorrectCurrency,
+			GroundTruth: Schedule{
+				Name: "payment currency mismatch is rejected", Program: ProgramCorrectCurrency, OrderID: "order_corpus_currency_2",
+				Actions: []Action{
+					{Type: "deliver", EventID: "event_wrong_currency", Status: "captured", Currency: "USD"},
 					{Type: "deliver", EventID: "event_captured", Status: "captured"},
 					{Type: "fulfill", Response: "ok"},
 				},

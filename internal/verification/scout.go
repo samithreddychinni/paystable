@@ -36,6 +36,7 @@ var scoutFeatureNames = []string{
 	"parallel_delivery_count",
 	"amount_mismatch_count",
 	"order_mismatch_count",
+	"currency_mismatch_count",
 }
 
 var scoutPriorWeights = map[string]float64{
@@ -46,6 +47,7 @@ var scoutPriorWeights = map[string]float64{
 	"parallel_delivery_count":          1,
 	"amount_mismatch_count":            1,
 	"order_mismatch_count":             1,
+	"currency_mismatch_count":          1,
 }
 
 type ScoutModel struct {
@@ -356,6 +358,9 @@ func scoutFeatures(actions []Action) []float64 {
 			}
 			if action.PaymentOrderID != "" {
 				features[22]++
+			}
+			if HasCurrencyMismatch(action) {
+				features[23]++
 			}
 			switch action.Trust {
 			case "missing-signature":

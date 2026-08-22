@@ -28,13 +28,17 @@ const (
 	ProgramCorrectAmount                 = "correct-amount"
 	ProgramAcceptWrongOrder              = "accept-wrong-order"
 	ProgramCorrectOrder                  = "correct-order"
+	ProgramAcceptWrongCurrency           = "accept-wrong-currency"
+	ProgramCorrectCurrency               = "correct-currency"
 	InvariantFulfillmentAtMostOnce       = "INV-2"
 	InvariantTerminalStateStable         = "INV-4"
 	InvariantTrustedEventsOnly           = "INV-SEC-1"
 	InvariantRetryBounded                = "INV-RETRY-1"
 	InvariantExpectedAmount              = "INV-AMOUNT-1"
 	InvariantExpectedOrder               = "INV-ORDER-1"
+	InvariantExpectedCurrency            = "INV-CURRENCY-1"
 	ExpectedPaymentAmount          int64 = 49900
+	ExpectedPaymentCurrency              = "INR"
 )
 
 type Schedule struct {
@@ -54,6 +58,7 @@ type Action struct {
 	Parallel       int    `json:"parallel,omitempty"`
 	Amount         int64  `json:"amount,omitempty"`
 	PaymentOrderID string `json:"payment_order_id,omitempty"`
+	Currency       string `json:"currency,omitempty"`
 }
 
 type TraceEntry struct {
@@ -89,6 +94,7 @@ type runner struct {
 	untrusted     bool
 	wrongAmount   bool
 	wrongOrder    bool
+	wrongCurrency bool
 	effects       map[string]bool
 	effectCount   int
 	effectAttempt int
@@ -159,6 +165,13 @@ func ResultFor(schedule Schedule, finalState string, capturedOnce bool, effectCo
 			})
 			break
 		}
+		if entry.Action == "currency_mismatch_accept" {
+			result.Violations = append(result.Violations, Violation{
+				Invariant: InvariantExpectedCurrency,
+				Detail:    fmt.Sprintf("order %s accepted a payment currency mismatch", schedule.OrderID),
+			})
+			break
+		}
 	}
 	return result
 }
@@ -196,14 +209,14 @@ func Validate(schedule Schedule) error {
 				return fmt.Errorf("action %d cannot combine parallel delivery with a crash", i+1)
 			}
 		case "fulfill":
-			if action.EventID != "" || action.Status != "" || action.CrashAt != "" || action.Trust != "" || action.Parallel != 0 || action.Amount != 0 || action.PaymentOrderID != "" {
+			if action.EventID != "" || action.Status != "" || action.CrashAt != "" || action.Trust != "" || action.Parallel != 0 || action.Amount != 0 || action.PaymentOrderID != "" || action.Currency != "" {
 				return fmt.Errorf("action %d has fields that fulfill does not use", i+1)
 			}
 			if action.Response != "ok" && action.Response != "lost" && action.Response != "timeout" && action.Response != "connection-reset" && action.Response != "http-500" && action.Response != "db-conflict" && action.Response != "db-deadlock" {
 				return fmt.Errorf("action %d has an invalid fulfillment response", i+1)
 			}
 		case "restart":
-			if action.EventID != "" || action.Status != "" || action.CrashAt != "" || action.Response != "" || action.Trust != "" || action.Parallel != 0 || action.Amount != 0 || action.PaymentOrderID != "" {
+			if action.EventID != "" || action.Status != "" || action.CrashAt != "" || action.Response != "" || action.Trust != "" || action.Parallel != 0 || action.Amount != 0 || action.PaymentOrderID != "" || action.Currency != "" {
 				return fmt.Errorf("action %d has fields that restart does not use", i+1)
 			}
 		default:
@@ -220,7 +233,8 @@ func supportedProgram(program string) bool {
 		ProgramNewKeyOnDBConflict, ProgramNewKeyOnDBDeadlock, ProgramRetryForever, ProgramRetryBounded,
 		ProgramTerminalStable, ProgramAcceptUntrusted, ProgramCorrectSecurity,
 		ProgramCorrectNetwork, ProgramCorrectDBConflict, ProgramCorrectDBDeadlock,
-		ProgramAcceptWrongAmount, ProgramCorrectAmount, ProgramAcceptWrongOrder, ProgramCorrectOrder:
+		ProgramAcceptWrongAmount, ProgramCorrectAmount, ProgramAcceptWrongOrder, ProgramCorrectOrder,
+		ProgramAcceptWrongCurrency, ProgramCorrectCurrency:
 		return true
 	}
 	return false
@@ -270,6 +284,14 @@ func (r *runner) deliver(action Action) error {
 		r.wrongAmount = true
 		r.record("amount_mismatch_accept", "payment amount mismatch accepted")
 	}
+	if HasCurrencyMismatch(action) && r.schedule.Program != ProgramAcceptWrongCurrency {
+		r.record("reject", "payment currency mismatch rejected")
+		return nil
+	}
+	if HasCurrencyMismatch(action) {
+		r.wrongCurrency = true
+		r.record("currency_mismatch_accept", "payment currency mismatch accepted")
+	}
 	if HasOrderMismatch(r.schedule.OrderID, action) && r.schedule.Program != ProgramAcceptWrongOrder {
 		r.record("reject", "payment order mismatch rejected")
 		return nil
@@ -313,6 +335,11 @@ func (r *runner) deliver(action Action) error {
 // HasAmountMismatch reports whether an explicit payment amount differs from the expected amount.
 func HasAmountMismatch(action Action) bool {
 	return action.Amount != 0 && action.Amount != ExpectedPaymentAmount
+}
+
+// HasCurrencyMismatch reports whether an explicit payment currency differs from INR.
+func HasCurrencyMismatch(action Action) bool {
+	return action.Currency != "" && action.Currency != ExpectedPaymentCurrency
 }
 
 // HasOrderMismatch reports whether an explicit payment order differs from the schedule order.

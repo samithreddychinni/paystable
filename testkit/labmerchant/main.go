@@ -189,6 +189,20 @@ func (a *app) deliver(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if verification.HasCurrencyMismatch(action) && current.program != verification.ProgramAcceptWrongCurrency {
+		if err := a.record(r.Context(), "reject", "payment currency mismatch rejected"); err != nil {
+			http.Error(w, "could not record the currency rejection", http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	if verification.HasCurrencyMismatch(action) {
+		if err := a.record(r.Context(), "currency_mismatch_accept", "payment currency mismatch accepted"); err != nil {
+			http.Error(w, "could not record the currency mismatch", http.StatusInternalServerError)
+			return
+		}
+	}
 	if verification.HasOrderMismatch(current.orderID, action) && current.program != verification.ProgramAcceptWrongOrder {
 		if err := a.record(r.Context(), "reject", "payment order mismatch rejected"); err != nil {
 			http.Error(w, "could not record the order rejection", http.StatusInternalServerError)

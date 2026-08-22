@@ -78,7 +78,7 @@ func RunIndependentReport(training ProgramCorpus, budget int, seed int64) (Indep
 		return IndependentReport{}, err
 	}
 	report := IndependentReport{
-		Version: 7, Evaluation: "independent-merchant-implementations",
+		Version: 8, Evaluation: "independent-merchant-implementations",
 		Budget: budget, Seed: seed, ScoutModelBytes: len(modelJSON),
 	}
 	for offset := int64(0); offset < 20; offset++ {
@@ -193,6 +193,7 @@ func independentCases() []independentCase {
 	parallelCaptured := Action{Type: "deliver", EventID: "parallel", Status: "captured", Parallel: 2}
 	wrongAmount := Action{Type: "deliver", EventID: "wrong-amount", Status: "captured", Amount: 1}
 	wrongOrder := Action{Type: "deliver", EventID: "wrong-order", Status: "captured", PaymentOrderID: "order_other"}
+	wrongCurrency := Action{Type: "deliver", EventID: "wrong-currency", Status: "captured", Currency: "USD"}
 	databaseConflict := Action{Type: "fulfill", Response: "db-conflict"}
 	databaseDeadlock := Action{Type: "fulfill", Response: "db-deadlock"}
 	serverError := Action{Type: "fulfill", Response: "http-500"}
@@ -314,6 +315,20 @@ func independentCases() []independentCase {
 			actions: []Action{trustedCaptured, trustedFailed, wrongOrder, fulfillOK},
 			execute: func(schedule Schedule) (Result, error) {
 				return runRawBindingMerchant(schedule, merchantcase.NewCorrectBinding(schedule.OrderID))
+			},
+		},
+		{
+			program: ProgramCase{Program: "raw-json-currency-unsafe", Family: "payment-currency", ExpectedInvariant: InvariantExpectedCurrency},
+			actions: []Action{trustedCaptured, trustedFailed, wrongCurrency, fulfillOK},
+			execute: func(schedule Schedule) (Result, error) {
+				return runRawCurrencyMerchant(schedule, merchantcase.NewVulnerableCurrency())
+			},
+		},
+		{
+			program: ProgramCase{Program: "raw-json-currency-safe", Family: "correct-currency"},
+			actions: []Action{trustedCaptured, trustedFailed, wrongCurrency, fulfillOK},
+			execute: func(schedule Schedule) (Result, error) {
+				return runRawCurrencyMerchant(schedule, merchantcase.NewCorrectCurrency(ExpectedPaymentCurrency))
 			},
 		},
 	}
@@ -841,6 +856,58 @@ func runRawBindingMerchant(schedule Schedule, merchant rawMerchant) (Result, err
 			record("fulfill", "fulfillment sink accepted the stable key")
 		default:
 			return Result{}, fmt.Errorf("raw order merchant does not support %s", action.Type)
+		}
+	}
+	snapshot := merchant.Snapshot()
+	return ResultFor(schedule, snapshot.State, snapshot.CapturedOnce, snapshot.EffectCount, trace), nil
+}
+
+func runRawCurrencyMerchant(schedule Schedule, merchant rawMerchant) (Result, error) {
+	if err := validateIndependent(schedule); err != nil {
+		return Result{}, err
+	}
+	var trace []TraceEntry
+	record := func(action, detail string) {
+		snapshot := merchant.Snapshot()
+		trace = append(trace, TraceEntry{
+			Sequence: len(trace) + 1, Action: action, Detail: detail,
+			State: snapshot.State, EffectCount: snapshot.EffectCount,
+		})
+	}
+	for _, action := range schedule.Actions {
+		switch action.Type {
+		case "deliver":
+			currency := action.Currency
+			if currency == "" {
+				currency = ExpectedPaymentCurrency
+			}
+			body, err := json.Marshal(struct {
+				EventID  string `json:"event_id"`
+				Status   string `json:"status"`
+				Currency string `json:"currency"`
+			}{action.EventID, action.Status, currency})
+			if err != nil {
+				return Result{}, err
+			}
+			accepted, err := merchant.Deliver(body)
+			if err != nil {
+				return Result{}, err
+			}
+			if !accepted {
+				record("reject", "payment currency mismatch rejected")
+				continue
+			}
+			if HasCurrencyMismatch(action) {
+				record("currency_mismatch_accept", "payment currency mismatch accepted")
+			}
+			record("deliver", "raw payment event processed")
+		case "fulfill":
+			if err := merchant.Fulfill(); err != nil {
+				return Result{}, err
+			}
+			record("fulfill", "fulfillment sink accepted the stable key")
+		default:
+			return Result{}, fmt.Errorf("raw currency merchant does not support %s", action.Type)
 		}
 	}
 	snapshot := merchant.Snapshot()

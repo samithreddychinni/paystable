@@ -155,6 +155,9 @@ func verifyTrace(schedule verification.Schedule, result verification.Result) err
 		if verification.HasOrderMismatch(schedule.OrderID, action) && schedule.Program == verification.ProgramAcceptWrongOrder {
 			want["order_mismatch_accept"]++
 		}
+		if verification.HasCurrencyMismatch(action) && schedule.Program == verification.ProgramAcceptWrongCurrency {
+			want["currency_mismatch_accept"]++
+		}
 	}
 	got := make(map[string]int)
 	for _, entry := range result.Trace {

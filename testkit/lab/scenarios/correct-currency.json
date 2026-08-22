@@ -1,0 +1,22 @@
+{
+  "name": "payment currency mismatch is rejected",
+  "program": "correct-currency",
+  "order_id": "order_currency_2",
+  "actions": [
+    {
+      "type": "deliver",
+      "event_id": "event_wrong_currency",
+      "status": "captured",
+      "currency": "USD"
+    },
+    {
+      "type": "deliver",
+      "event_id": "event_captured",
+      "status": "captured"
+    },
+    {
+      "type": "fulfill",
+      "response": "ok"
+    }
+  ]
+}

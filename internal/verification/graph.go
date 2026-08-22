@@ -22,17 +22,18 @@ type BehaviorNode struct {
 }
 
 type BehaviorState struct {
-	Running             bool     `json:"running"`
-	PaymentState        string   `json:"payment_state"`
-	CapturedOnce        bool     `json:"captured_once"`
-	PendingFulfillment  bool     `json:"pending_fulfillment"`
-	UntrustedAccepted   bool     `json:"untrusted_accepted"`
-	WrongAmountAccepted bool     `json:"wrong_amount_accepted"`
-	WrongOrderAccepted  bool     `json:"wrong_order_accepted"`
-	EffectCount         int      `json:"effect_count"`
-	EffectAttempt       int      `json:"effect_attempt"`
-	SeenEvents          []string `json:"seen_events"`
-	FulfillmentKeys     []string `json:"fulfillment_keys"`
+	Running               bool     `json:"running"`
+	PaymentState          string   `json:"payment_state"`
+	CapturedOnce          bool     `json:"captured_once"`
+	PendingFulfillment    bool     `json:"pending_fulfillment"`
+	UntrustedAccepted     bool     `json:"untrusted_accepted"`
+	WrongAmountAccepted   bool     `json:"wrong_amount_accepted"`
+	WrongOrderAccepted    bool     `json:"wrong_order_accepted"`
+	WrongCurrencyAccepted bool     `json:"wrong_currency_accepted"`
+	EffectCount           int      `json:"effect_count"`
+	EffectAttempt         int      `json:"effect_attempt"`
+	SeenEvents            []string `json:"seen_events"`
+	FulfillmentKeys       []string `json:"fulfillment_keys"`
 }
 
 type BehaviorEdge struct {
@@ -54,7 +55,7 @@ func CompileBehaviorGraph(program string, maxActions int) (BehaviorGraph, error)
 		schedule: Schedule{Name: "payment behavior graph", Program: program, OrderID: "order_graph"},
 		running:  true, seen: make(map[string]bool), effects: make(map[string]bool),
 	}
-	graph := BehaviorGraph{Version: 6, Program: program, MaxActions: maxActions}
+	graph := BehaviorGraph{Version: 7, Program: program, MaxActions: maxActions}
 	graph.Nodes = append(graph.Nodes, BehaviorNode{ID: 0, State: behaviorState(initial)})
 	states := []*runner{initial}
 	nodeByState := map[string]int{behaviorStateKey(0, initial): 0}
@@ -121,6 +122,9 @@ func behaviorActions(program string) []Action {
 	if program == ProgramAcceptWrongOrder || program == ProgramCorrectOrder {
 		actions = append(actions, Action{Type: "deliver", EventID: "event_wrong_order", Status: "captured", PaymentOrderID: "order_other"})
 	}
+	if program == ProgramAcceptWrongCurrency || program == ProgramCorrectCurrency {
+		actions = append(actions, Action{Type: "deliver", EventID: "event_wrong_currency", Status: "captured", Currency: "USD"})
+	}
 	switch program {
 	case ProgramNewKeyOnTimeout, ProgramCorrectNetwork:
 		actions = append(actions, Action{Type: "fulfill", Response: "timeout"})
@@ -159,8 +163,9 @@ func behaviorState(r *runner) BehaviorState {
 	state := BehaviorState{
 		Running: r.running, PaymentState: r.state, CapturedOnce: r.capturedOnce,
 		PendingFulfillment: r.pendingEffect, UntrustedAccepted: r.untrusted, WrongAmountAccepted: r.wrongAmount,
-		WrongOrderAccepted: r.wrongOrder,
-		EffectCount:        r.effectCount, EffectAttempt: r.effectAttempt,
+		WrongOrderAccepted:    r.wrongOrder,
+		WrongCurrencyAccepted: r.wrongCurrency,
+		EffectCount:           r.effectCount, EffectAttempt: r.effectAttempt,
 		SeenEvents: []string{}, FulfillmentKeys: []string{},
 	}
 	for event := range r.seen {

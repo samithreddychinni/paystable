@@ -98,6 +98,8 @@ jobs:
           go run ./testkit/labexec testkit/lab/scenarios/correct-amount.json /tmp/correct-amount.json
           go run ./testkit/labexec testkit/lab/scenarios/order-mismatch.json /tmp/order-mismatch.json INV-ORDER-1
           go run ./testkit/labexec testkit/lab/scenarios/correct-order.json /tmp/correct-order.json
+          go run ./testkit/labexec testkit/lab/scenarios/currency-mismatch.json /tmp/currency-mismatch.json INV-CURRENCY-1
+          go run ./testkit/labexec testkit/lab/scenarios/correct-currency.json /tmp/correct-currency.json
       - name: Stop the Docker laboratory
         if: always()
         run: docker compose -f docker-compose.lab.yml down

@@ -18,8 +18,8 @@ func TestIndependentReportUsesUnseenImplementations(t *testing.T) {
 	if !reflect.DeepEqual(first, second) {
 		t.Fatal("independent report is not deterministic")
 	}
-	if len(first.Cases) != 22 {
-		t.Fatalf("independent report has %d cases, want 22", len(first.Cases))
+	if len(first.Cases) != 24 {
+		t.Fatalf("independent report has %d cases, want 24", len(first.Cases))
 	}
 	if len(first.RandomSeeds) != 20 || len(first.Confidence) != 5 {
 		t.Fatalf("independent report has %d seeds and %d confidence estimates", len(first.RandomSeeds), len(first.Confidence))
@@ -44,7 +44,7 @@ func TestIndependentReportUsesUnseenImplementations(t *testing.T) {
 		}
 	}
 	for _, estimate := range first.Confidence {
-		if estimate.Method == BaselineRandom && (estimate.Trials != 220 || estimate.FalseFindingCount != 0) {
+		if estimate.Method == BaselineRandom && (estimate.Trials != 240 || estimate.FalseFindingCount != 0) {
 			t.Fatalf("random confidence estimate is invalid: %#v", estimate)
 		}
 	}
