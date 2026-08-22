@@ -121,6 +121,17 @@ The benchmark will report these measures:
 - peak memory
 - local inference latency.
 
+Run the local performance report with a fixed budget, seed, and inference repetition count:
+
+```bash
+go run ./testkit/lab performance 50 7 100
+```
+
+The search timers include candidate ordering and execution. They exclude model training and graph compilation.
+The memory fields report the Go heap in use. The command samples this value every millisecond for the full run.
+This value is not the process peak resident set size.
+Run the command on an idle target machine before you compare results because local load and hardware affect all timing values.
+
 Scout must find every held-out failure within 50 executions.
 Its median execution count must beat each required baseline.
 If medians tie at one, Scout must have a higher `Success@10` rate.

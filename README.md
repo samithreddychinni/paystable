@@ -308,6 +308,7 @@ Set `SECRET_ENCRYPTION_KEY` before using rotation. During the rotation window, P
 - [Callback contract](docs/callback-contract.md)
 - [Lag estimator](docs/lag-estimator.md)
 - [Frontend UX guide](docs/frontend-ux.md)
+- [Learned verification scope and performance command](docs/verification-scope.md)
 - [Testkit](testkit/README.md)
 
 ---
