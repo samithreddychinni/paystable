@@ -120,8 +120,8 @@ They are repository-authored implementations, not third-party code.
 Two order implementations use the same independent boundary.
 Two currency implementations use the same independent boundary.
 
-Run the optional [external implementation check](../external/README.md) separately.
-The external result is not part of the Scout performance report.
+Run the optional [external implementation checks](../external/README.md) separately.
+The external results are not part of the Scout performance report.
 Run `go run ./testkit/lab external-transfer` after that check.
 
 ## Verify the constrained repair

@@ -1,0 +1,24 @@
+package razorpay
+
+import (
+	"bytes"
+	"testing"
+)
+
+func TestPaystableProbeChecksUnicodeAndTampering(t *testing.T) {
+	p := New(testConfig())
+	body := buildEnvelope("subscription.charged", 1700000000, `{"subscription":{"entity":{"id":"sub_probe","notes":{"description":"नमस्ते ₹"}}}}`)
+	headers := webhookHeaders(body, testConfig().WebhookSecret, "evt_probe")
+
+	event, err := p.VerifyWebhook(body, headers)
+	if err != nil || event.ProviderEventID != "evt_probe" {
+		t.Fatalf("the signed Unicode payload failed: %v", err)
+	}
+	tampered := bytes.Replace(body, []byte("₹"), []byte("$"), 1)
+	if _, err := p.VerifyWebhook(tampered, headers); err == nil {
+		t.Fatal("the changed Unicode payload kept the original signature")
+	}
+	if _, err := p.VerifyWebhook(body, webhookHeaders(body, testConfig().WebhookSecret, "")); err == nil {
+		t.Fatal("the payload passed without an event ID")
+	}
+}
