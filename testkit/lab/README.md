@@ -84,7 +84,7 @@ Evaluate all methods against merchant implementations outside the training simul
 go run ./testkit/lab independent 50 7
 ```
 
-The benchmark contains six vulnerable implementations and six correct implementations.
+The benchmark contains eight vulnerable implementations and eight correct implementations.
 The random baseline uses 20 consecutive seeds.
 The report includes Wilson 95% intervals for `Success@10`.
 
@@ -137,6 +137,8 @@ output, Compose files, and the dashboard.
 | `new-key-after-connection-reset.json` | `INV-2` |
 | `new-key-after-server-error.json` | `INV-2` |
 | `new-key-after-db-conflict.json` | `INV-2` |
+| `new-key-after-db-deadlock.json` | `INV-2` |
+| `retry-overrun.json` | `INV-RETRY-1` |
 | `stale-terminal-regression.json` | `INV-4` |
 | `correct-terminal.json` | none |
 | `invalid-signature.json` | `INV-SEC-1` |
@@ -144,6 +146,8 @@ output, Compose files, and the dashboard.
 | `concurrent-claim.json` | `INV-2` |
 | `correct-concurrency.json` | none |
 | `correct-db-conflict.json` | none |
+| `correct-db-deadlock.json` | none |
+| `correct-retry-exhaustion.json` | none |
 | `correct-security.json` | none |
 | `correct.json` | none |
 
@@ -173,6 +177,8 @@ The merchant stores events, payment state, effects, and traces in PostgreSQL.
 The laboratory creates real response timeouts, connection resets, and HTTP 500 responses.
 It also sends concurrent webhooks through competing PostgreSQL transactions.
 It creates a real PostgreSQL serialization failure after a fulfillment effect.
+It also creates a real PostgreSQL deadlock after a fulfillment effect.
+The retry-limit schedules use one stable fulfillment key.
 Docker restarts the merchant after each named crash or lost response.
 
 4. Reduce a failing schedule to a 1-minimal schedule:

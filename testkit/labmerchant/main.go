@@ -272,8 +272,8 @@ func (a *app) fulfill(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &action, "fulfill action") {
 		return
 	}
-	if action.Response == "db-conflict" {
-		a.fulfillWithConflict(w, r, action)
+	if action.Response == "db-conflict" || action.Response == "db-deadlock" {
+		a.fulfillWithDatabaseFailure(w, r, action)
 		return
 	}
 	tx, err := a.db.BeginTx(r.Context(), nil)
@@ -303,8 +303,9 @@ func (a *app) fulfill(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "could not record fulfillment", http.StatusInternalServerError)
 		return
 	}
+	pending := action.Response != "ok" && !verification.RetryExhausted(current.program, attempt)
 	if _, err := tx.ExecContext(r.Context(), `
-		UPDATE lab_state SET effect_attempt=$1, pending_effect=$2`, attempt, action.Response != "ok"); err != nil {
+		UPDATE lab_state SET effect_attempt=$1, pending_effect=$2`, attempt, pending); err != nil {
 		http.Error(w, "could not update fulfillment", http.StatusInternalServerError)
 		return
 	}
@@ -316,6 +317,18 @@ func (a *app) fulfill(w http.ResponseWriter, r *http.Request) {
 		if err := recordTx(r.Context(), tx, verification.ResponseTraceAction(action.Response), "merchant did not receive a reliable sink response"); err != nil {
 			http.Error(w, "could not record the lost response", http.StatusInternalServerError)
 			return
+		}
+		if verification.RetryExhausted(current.program, attempt) {
+			if err := recordTx(r.Context(), tx, "retry_exhausted", "fulfillment retry limit reached"); err != nil {
+				http.Error(w, "could not record retry exhaustion", http.StatusInternalServerError)
+				return
+			}
+		}
+		if verification.RetryOverrun(current.program, attempt) {
+			if err := recordTx(r.Context(), tx, "retry_overrun", "fulfillment continued after the retry limit"); err != nil {
+				http.Error(w, "could not record retry overrun", http.StatusInternalServerError)
+				return
+			}
 		}
 	}
 	if err := tx.Commit(); err != nil {
@@ -346,7 +359,7 @@ func (a *app) fulfill(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (a *app) fulfillWithConflict(w http.ResponseWriter, r *http.Request, action verification.Action) {
+func (a *app) fulfillWithDatabaseFailure(w http.ResponseWriter, r *http.Request, action verification.Action) {
 	current, err := a.loadState(r)
 	if err != nil || !current.pendingEffect {
 		http.Error(w, "payment is not ready for fulfillment", http.StatusConflict)
@@ -366,15 +379,20 @@ func (a *app) fulfillWithConflict(w http.ResponseWriter, r *http.Request, action
 		http.Error(w, "could not record fulfillment", http.StatusInternalServerError)
 		return
 	}
-	if err := a.causeDatabaseConflict(r.Context()); err != nil {
-		http.Error(w, "could not create a database conflict", http.StatusInternalServerError)
+	if action.Response == "db-conflict" {
+		err = a.causeDatabaseConflict(r.Context())
+	} else {
+		err = a.causeDatabaseDeadlock(r.Context())
+	}
+	if err != nil {
+		http.Error(w, "could not create a database failure", http.StatusInternalServerError)
 		return
 	}
 	if err := a.record(r.Context(), verification.ResponseTraceAction(action.Response), "database transaction failed after fulfillment"); err != nil {
-		http.Error(w, "could not record the database conflict", http.StatusInternalServerError)
+		http.Error(w, "could not record the database failure", http.StatusInternalServerError)
 		return
 	}
-	http.Error(w, "database transaction conflict", http.StatusConflict)
+	http.Error(w, "database transaction failed", http.StatusConflict)
 }
 
 func (a *app) recordExternalEffect(ctx context.Context, key, orderID string) error {
@@ -422,11 +440,63 @@ func (a *app) causeDatabaseConflict(ctx context.Context) error {
 	if err == nil {
 		return fmt.Errorf("expected PostgreSQL error 40001")
 	}
-	var databaseError *pq.Error
-	if !errors.As(err, &databaseError) || databaseError.Code != "40001" {
+	if !postgresError(err, "40001") {
 		return fmt.Errorf("expected PostgreSQL error 40001, got %w", err)
 	}
 	return nil
+}
+
+func (a *app) causeDatabaseDeadlock(ctx context.Context) error {
+	first, err := a.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer first.Rollback()
+	second, err := a.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer second.Rollback()
+	for _, tx := range []*sql.Tx{first, second} {
+		if _, err := tx.ExecContext(ctx, `SET LOCAL deadlock_timeout = '100ms'`); err != nil {
+			return err
+		}
+	}
+	if _, err := first.ExecContext(ctx, `SELECT pg_advisory_xact_lock(7001)`); err != nil {
+		return err
+	}
+	if _, err := second.ExecContext(ctx, `SELECT pg_advisory_xact_lock(7002)`); err != nil {
+		return err
+	}
+	results := make(chan error, 2)
+	lock := func(tx *sql.Tx, key int) {
+		_, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1)`, key)
+		if err != nil {
+			_ = tx.Rollback()
+		}
+		results <- err
+	}
+	go lock(first, 7002)
+	go lock(second, 7001)
+	deadlocks := 0
+	for range 2 {
+		err := <-results
+		if postgresError(err, "40P01") {
+			deadlocks++
+		} else if err != nil {
+			return err
+		}
+	}
+	if deadlocks != 1 {
+		return fmt.Errorf("expected one PostgreSQL error 40P01, got %d", deadlocks)
+	}
+	_, err = a.db.ExecContext(ctx, `UPDATE lab_state SET effect_attempt=effect_attempt+1 WHERE singleton=true`)
+	return err
+}
+
+func postgresError(err error, code string) bool {
+	var databaseError *pq.Error
+	return errors.As(err, &databaseError) && string(databaseError.Code) == code
 }
 
 func (a *app) result(w http.ResponseWriter, r *http.Request) {

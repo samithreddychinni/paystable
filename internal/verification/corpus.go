@@ -17,7 +17,7 @@ type ProgramCase struct {
 
 // GenerateProgramCorpus returns the executable programs and their canonical schedules.
 func GenerateProgramCorpus() ProgramCorpus {
-	return ProgramCorpus{Version: 3, MaxScheduleActions: 4, Programs: []ProgramCase{
+	return ProgramCorpus{Version: 4, MaxScheduleActions: 4, Programs: []ProgramCase{
 		{
 			Family: "deduplication-order", Program: ProgramFulfillBeforeDedup,
 			GroundTruth: Schedule{
@@ -97,6 +97,31 @@ func GenerateProgramCorpus() ProgramCorpus {
 				},
 			},
 			ExpectedInvariant: InvariantFulfillmentAtMostOnce, ExpectedFinalState: "captured", ExpectedEffectCount: 2,
+		},
+		{
+			Family: "database-deadlock", Program: ProgramNewKeyOnDBDeadlock,
+			GroundTruth: Schedule{
+				Name: "new idempotency key after a database deadlock", Program: ProgramNewKeyOnDBDeadlock, OrderID: "order_corpus_db_deadlock_1",
+				Actions: []Action{
+					{Type: "deliver", EventID: "event_captured", Status: "captured"},
+					{Type: "fulfill", Response: "db-deadlock"},
+					{Type: "fulfill", Response: "ok"},
+				},
+			},
+			ExpectedInvariant: InvariantFulfillmentAtMostOnce, ExpectedFinalState: "captured", ExpectedEffectCount: 2,
+		},
+		{
+			Family: "retry-exhaustion", Program: ProgramRetryForever,
+			GroundTruth: Schedule{
+				Name: "fulfillment continues after retry exhaustion", Program: ProgramRetryForever, OrderID: "order_corpus_retry_limit_1",
+				Actions: []Action{
+					{Type: "deliver", EventID: "event_captured", Status: "captured"},
+					{Type: "fulfill", Response: "http-500"},
+					{Type: "fulfill", Response: "http-500"},
+					{Type: "fulfill", Response: "http-500"},
+				},
+			},
+			ExpectedInvariant: InvariantRetryBounded, ExpectedFinalState: "captured", ExpectedEffectCount: 1,
 		},
 		{
 			Family: "terminal-state", Program: ProgramTerminalRegression,
@@ -187,6 +212,30 @@ func GenerateProgramCorpus() ProgramCorpus {
 					{Type: "deliver", EventID: "event_captured", Status: "captured"},
 					{Type: "fulfill", Response: "db-conflict"},
 					{Type: "fulfill", Response: "ok"},
+				},
+			},
+			ExpectedFinalState: "captured", ExpectedEffectCount: 1,
+		},
+		{
+			Family: "correct-db-deadlock", Program: ProgramCorrectDBDeadlock,
+			GroundTruth: Schedule{
+				Name: "stable key after a database deadlock", Program: ProgramCorrectDBDeadlock, OrderID: "order_corpus_db_deadlock_2",
+				Actions: []Action{
+					{Type: "deliver", EventID: "event_captured", Status: "captured"},
+					{Type: "fulfill", Response: "db-deadlock"},
+					{Type: "fulfill", Response: "ok"},
+				},
+			},
+			ExpectedFinalState: "captured", ExpectedEffectCount: 1,
+		},
+		{
+			Family: "correct-retry-exhaustion", Program: ProgramRetryBounded,
+			GroundTruth: Schedule{
+				Name: "fulfillment stops at the retry limit", Program: ProgramRetryBounded, OrderID: "order_corpus_retry_limit_2",
+				Actions: []Action{
+					{Type: "deliver", EventID: "event_captured", Status: "captured"},
+					{Type: "fulfill", Response: "http-500"},
+					{Type: "fulfill", Response: "http-500"},
 				},
 			},
 			ExpectedFinalState: "captured", ExpectedEffectCount: 1,

@@ -14,15 +14,20 @@ const (
 	ProgramNewKeyOnReset           = "new-key-on-reset"
 	ProgramNewKeyOnServerError     = "new-key-on-server-error"
 	ProgramNewKeyOnDBConflict      = "new-key-on-db-conflict"
+	ProgramNewKeyOnDBDeadlock      = "new-key-on-db-deadlock"
+	ProgramRetryForever            = "retry-forever"
+	ProgramRetryBounded            = "retry-bounded"
 	ProgramTerminalRegression      = "terminal-regression"
 	ProgramTerminalStable          = "terminal-stable"
 	ProgramAcceptUntrusted         = "accept-untrusted-webhook"
 	ProgramCorrectSecurity         = "correct-security"
 	ProgramCorrectNetwork          = "correct-network"
 	ProgramCorrectDBConflict       = "correct-db-conflict"
+	ProgramCorrectDBDeadlock       = "correct-db-deadlock"
 	InvariantFulfillmentAtMostOnce = "INV-2"
 	InvariantTerminalStateStable   = "INV-4"
 	InvariantTrustedEventsOnly     = "INV-SEC-1"
+	InvariantRetryBounded          = "INV-RETRY-1"
 )
 
 type Schedule struct {
@@ -122,6 +127,13 @@ func ResultFor(schedule Schedule, finalState string, capturedOnce bool, effectCo
 			})
 			break
 		}
+		if entry.Action == "retry_overrun" {
+			result.Violations = append(result.Violations, Violation{
+				Invariant: InvariantRetryBounded,
+				Detail:    fmt.Sprintf("order %s exceeded its retry limit", schedule.OrderID),
+			})
+			break
+		}
 	}
 	return result
 }
@@ -159,7 +171,7 @@ func Validate(schedule Schedule) error {
 			if action.EventID != "" || action.Status != "" || action.CrashAt != "" || action.Trust != "" || action.Parallel != 0 {
 				return fmt.Errorf("action %d has fields that fulfill does not use", i+1)
 			}
-			if action.Response != "ok" && action.Response != "lost" && action.Response != "timeout" && action.Response != "connection-reset" && action.Response != "http-500" && action.Response != "db-conflict" {
+			if action.Response != "ok" && action.Response != "lost" && action.Response != "timeout" && action.Response != "connection-reset" && action.Response != "http-500" && action.Response != "db-conflict" && action.Response != "db-deadlock" {
 				return fmt.Errorf("action %d has an invalid fulfillment response", i+1)
 			}
 		case "restart":
@@ -177,8 +189,9 @@ func supportedProgram(program string) bool {
 	switch program {
 	case ProgramCorrect, ProgramConcurrentBeforeClaim, ProgramCorrectConcurrency, ProgramFulfillBeforeDedup, ProgramNewKeyOnRetry, ProgramNewKeyOnTimeout,
 		ProgramNewKeyOnReset, ProgramNewKeyOnServerError, ProgramTerminalRegression,
-		ProgramNewKeyOnDBConflict, ProgramTerminalStable, ProgramAcceptUntrusted, ProgramCorrectSecurity,
-		ProgramCorrectNetwork, ProgramCorrectDBConflict:
+		ProgramNewKeyOnDBConflict, ProgramNewKeyOnDBDeadlock, ProgramRetryForever, ProgramRetryBounded,
+		ProgramTerminalStable, ProgramAcceptUntrusted, ProgramCorrectSecurity,
+		ProgramCorrectNetwork, ProgramCorrectDBConflict, ProgramCorrectDBDeadlock:
 		return true
 	}
 	return false
@@ -276,6 +289,13 @@ func (r *runner) fulfill(action Action) error {
 	r.record("fulfill", "fulfillment sink accepted key "+key)
 	if action.Response != "ok" {
 		r.record(ResponseTraceAction(action.Response), "merchant did not receive a reliable sink response")
+		if RetryExhausted(r.schedule.Program, r.effectAttempt) {
+			r.pendingEffect = false
+			r.record("retry_exhausted", "fulfillment retry limit reached")
+		}
+		if RetryOverrun(r.schedule.Program, r.effectAttempt) {
+			r.record("retry_overrun", "fulfillment continued after the retry limit")
+		}
 		return nil
 	}
 	r.pendingEffect = false
@@ -285,7 +305,8 @@ func (r *runner) fulfill(action Action) error {
 // UsesNewKey reports whether a program changes its fulfillment key after a retry.
 func UsesNewKey(program string) bool {
 	switch program {
-	case ProgramNewKeyOnRetry, ProgramNewKeyOnTimeout, ProgramNewKeyOnReset, ProgramNewKeyOnServerError, ProgramNewKeyOnDBConflict:
+	case ProgramNewKeyOnRetry, ProgramNewKeyOnTimeout, ProgramNewKeyOnReset, ProgramNewKeyOnServerError,
+		ProgramNewKeyOnDBConflict, ProgramNewKeyOnDBDeadlock:
 		return true
 	}
 	return false
@@ -302,9 +323,21 @@ func ResponseTraceAction(response string) string {
 		return "response_http_500"
 	case "db-conflict":
 		return "database_conflict"
+	case "db-deadlock":
+		return "database_deadlock"
 	default:
 		return "response_lost"
 	}
+}
+
+// RetryExhausted reports whether a program stops at its uncertain-attempt limit.
+func RetryExhausted(program string, attempt int) bool {
+	return program == ProgramRetryBounded && attempt >= 2
+}
+
+// RetryOverrun reports whether a program continued after its uncertain-attempt limit.
+func RetryOverrun(program string, attempt int) bool {
+	return program == ProgramRetryForever && attempt > 2
 }
 
 func (r *runner) record(action, detail string) {

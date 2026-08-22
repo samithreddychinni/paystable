@@ -1,0 +1,10 @@
+{
+  "name": "new idempotency key after a database deadlock",
+  "program": "new-key-on-db-deadlock",
+  "order_id": "order_db_deadlock_1",
+  "actions": [
+    {"type": "deliver", "event_id": "event_captured", "status": "captured"},
+    {"type": "fulfill", "response": "db-deadlock"},
+    {"type": "fulfill", "response": "ok"}
+  ]
+}

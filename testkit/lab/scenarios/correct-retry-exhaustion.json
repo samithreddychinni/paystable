@@ -1,0 +1,10 @@
+{
+  "name": "fulfillment stops at the retry limit",
+  "program": "retry-bounded",
+  "order_id": "order_retry_limit_2",
+  "actions": [
+    {"type": "deliver", "event_id": "event_captured", "status": "captured"},
+    {"type": "fulfill", "response": "http-500"},
+    {"type": "fulfill", "response": "http-500"}
+  ]
+}

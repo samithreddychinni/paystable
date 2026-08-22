@@ -90,6 +90,10 @@ jobs:
           go run ./testkit/labexec testkit/lab/scenarios/correct-db-conflict.json /tmp/correct-db-conflict.json
           go run ./testkit/labexec testkit/lab/scenarios/stale-terminal-regression.json /tmp/delayed-stale.json INV-4
           go run ./testkit/labexec testkit/lab/scenarios/correct-terminal.json /tmp/correct-terminal.json
+          go run ./testkit/labexec testkit/lab/scenarios/new-key-after-db-deadlock.json /tmp/db-deadlock.json INV-2
+          go run ./testkit/labexec testkit/lab/scenarios/correct-db-deadlock.json /tmp/correct-db-deadlock.json
+          go run ./testkit/labexec testkit/lab/scenarios/retry-overrun.json /tmp/retry-overrun.json INV-RETRY-1
+          go run ./testkit/labexec testkit/lab/scenarios/correct-retry-exhaustion.json /tmp/correct-retry-exhaustion.json
       - name: Stop the Docker laboratory
         if: always()
         run: docker compose -f docker-compose.lab.yml down

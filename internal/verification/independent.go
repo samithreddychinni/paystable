@@ -70,7 +70,7 @@ func RunIndependentReport(training ProgramCorpus, budget int, seed int64) (Indep
 		return IndependentReport{}, err
 	}
 	report := IndependentReport{
-		Version: 3, Evaluation: "independent-merchant-implementations",
+		Version: 4, Evaluation: "independent-merchant-implementations",
 		Budget: budget, Seed: seed, ScoutModelBytes: len(modelJSON),
 	}
 	for offset := int64(0); offset < 20; offset++ {
@@ -184,6 +184,8 @@ func independentCases() []independentCase {
 	trustedFailed := Action{Type: "deliver", EventID: "failed", Status: "failed"}
 	parallelCaptured := Action{Type: "deliver", EventID: "parallel", Status: "captured", Parallel: 2}
 	databaseConflict := Action{Type: "fulfill", Response: "db-conflict"}
+	databaseDeadlock := Action{Type: "fulfill", Response: "db-deadlock"}
+	serverError := Action{Type: "fulfill", Response: "http-500"}
 	fulfillOK := Action{Type: "fulfill", Response: "ok"}
 	return []independentCase{
 		{
@@ -215,6 +217,26 @@ func independentCases() []independentCase {
 			program: ProgramCase{Program: "external-db-conflict-safe", Family: "correct-db-conflict"},
 			actions: []Action{trustedCaptured, trustedFailed, databaseConflict, fulfillOK},
 			execute: func(schedule Schedule) (Result, error) { return runIndependentRetry(schedule, false) },
+		},
+		{
+			program: ProgramCase{Program: "external-db-deadlock-unsafe", Family: "database-deadlock", ExpectedInvariant: InvariantFulfillmentAtMostOnce},
+			actions: []Action{trustedCaptured, trustedFailed, databaseDeadlock, fulfillOK},
+			execute: func(schedule Schedule) (Result, error) { return runIndependentRetry(schedule, true) },
+		},
+		{
+			program: ProgramCase{Program: "external-db-deadlock-safe", Family: "correct-db-deadlock"},
+			actions: []Action{trustedCaptured, trustedFailed, databaseDeadlock, fulfillOK},
+			execute: func(schedule Schedule) (Result, error) { return runIndependentRetry(schedule, false) },
+		},
+		{
+			program: ProgramCase{Program: "external-retry-overrun", Family: "retry-exhaustion", ExpectedInvariant: InvariantRetryBounded},
+			actions: []Action{trustedCaptured, serverError},
+			execute: func(schedule Schedule) (Result, error) { return runIndependentExhaustion(schedule, true) },
+		},
+		{
+			program: ProgramCase{Program: "external-retry-bounded", Family: "correct-retry-exhaustion"},
+			actions: []Action{trustedCaptured, serverError},
+			execute: func(schedule Schedule) (Result, error) { return runIndependentExhaustion(schedule, false) },
 		},
 		{
 			program: ProgramCase{Program: "external-concurrent-unsafe", Family: "concurrent-deduplication", ExpectedInvariant: InvariantFulfillmentAtMostOnce},
@@ -486,6 +508,54 @@ func runIndependentConcurrent(schedule Schedule, unsafe bool) (Result, error) {
 			s.record("fulfill", "fulfillment sink accepted the stable key")
 		default:
 			return Result{}, fmt.Errorf("concurrent merchant does not support %s", action.Type)
+		}
+	}
+	return s.result(schedule), nil
+}
+
+func runIndependentExhaustion(schedule Schedule, unsafe bool) (Result, error) {
+	if err := validateIndependent(schedule); err != nil {
+		return Result{}, err
+	}
+	s := newIndependentState()
+	for _, action := range schedule.Actions {
+		switch action.Type {
+		case "deliver":
+			if s.seen[action.EventID] {
+				s.record("deliver", "duplicate event ignored")
+				continue
+			}
+			s.seen[action.EventID] = true
+			s.state = action.Status
+			if s.state == "captured" {
+				s.capturedOnce = true
+				s.pending = true
+			}
+			s.record("deliver", "payment state updated")
+		case "fulfill":
+			if !s.pending {
+				return Result{}, fmt.Errorf("payment is not ready for fulfillment")
+			}
+			s.attempt++
+			if !s.effects[schedule.OrderID] {
+				s.effects[schedule.OrderID] = true
+				s.effectCount++
+			}
+			s.record("fulfill", "fulfillment sink accepted the stable key")
+			if action.Response == "ok" {
+				s.pending = false
+				continue
+			}
+			s.record(ResponseTraceAction(action.Response), "fulfillment response was uncertain")
+			if !unsafe && s.attempt >= 2 {
+				s.pending = false
+				s.record("retry_exhausted", "fulfillment retry limit reached")
+			}
+			if unsafe && s.attempt > 2 {
+				s.record("retry_overrun", "fulfillment continued after the retry limit")
+			}
+		default:
+			return Result{}, fmt.Errorf("retry-limit merchant does not support %s", action.Type)
 		}
 	}
 	return s.result(schedule), nil

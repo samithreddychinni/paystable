@@ -247,7 +247,7 @@ func (e *executor) postBody(path string, body []byte, signature, expected string
 	if expected == "http-500" && resp.StatusCode == http.StatusInternalServerError {
 		return nil
 	}
-	if expected == "db-conflict" && resp.StatusCode == http.StatusConflict {
+	if (expected == "db-conflict" || expected == "db-deadlock") && resp.StatusCode == http.StatusConflict {
 		return nil
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {

@@ -52,7 +52,7 @@ func CompileBehaviorGraph(program string, maxActions int) (BehaviorGraph, error)
 		schedule: Schedule{Name: "payment behavior graph", Program: program, OrderID: "order_graph"},
 		running:  true, seen: make(map[string]bool), effects: make(map[string]bool),
 	}
-	graph := BehaviorGraph{Version: 3, Program: program, MaxActions: maxActions}
+	graph := BehaviorGraph{Version: 4, Program: program, MaxActions: maxActions}
 	graph.Nodes = append(graph.Nodes, BehaviorNode{ID: 0, State: behaviorState(initial)})
 	states := []*runner{initial}
 	nodeByState := map[string]int{behaviorStateKey(0, initial): 0}
@@ -87,6 +87,12 @@ func CompileBehaviorGraph(program string, maxActions int) (BehaviorGraph, error)
 }
 
 func behaviorActions(program string) []Action {
+	if program == ProgramRetryForever || program == ProgramRetryBounded {
+		return []Action{
+			{Type: "deliver", EventID: "event_captured", Status: "captured"},
+			{Type: "fulfill", Response: "http-500"},
+		}
+	}
 	actions := []Action{
 		{Type: "deliver", EventID: "event_captured", Status: "captured"},
 		{Type: "deliver", EventID: "event_stale", Status: "failed"},
@@ -113,6 +119,8 @@ func behaviorActions(program string) []Action {
 		actions = append(actions, Action{Type: "fulfill", Response: "http-500"})
 	case ProgramNewKeyOnDBConflict, ProgramCorrectDBConflict:
 		actions = append(actions, Action{Type: "fulfill", Response: "db-conflict"})
+	case ProgramNewKeyOnDBDeadlock, ProgramCorrectDBDeadlock:
+		actions = append(actions, Action{Type: "fulfill", Response: "db-deadlock"})
 	case ProgramAcceptUntrusted, ProgramCorrectSecurity:
 		actions = append(actions,
 			Action{Type: "deliver", EventID: "event_untrusted", Status: "captured", Trust: "invalid-signature"},

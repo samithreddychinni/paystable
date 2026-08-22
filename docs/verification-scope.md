@@ -95,8 +95,11 @@ The first benchmark will include these bug classes:
 4. An untrusted webhook changes payment state.
 5. Concurrent webhook handlers fulfill before one handler claims the event.
 6. A database conflict causes a retry with a new idempotency key.
+7. A database deadlock causes a retry with a new idempotency key.
+8. Fulfillment continues after the retry limit.
 
-The retry class includes lost responses, timeouts, connection resets, HTTP 500 responses, and database conflicts.
+The retry class includes lost responses, timeouts, connection resets, HTTP 500 responses, database conflicts, and deadlocks.
+The retry-exhaustion class allows two uncertain fulfillment attempts.
 Action order represents delayed webhook delivery without wall-clock waits.
 Amount validation is the next bug class.
 

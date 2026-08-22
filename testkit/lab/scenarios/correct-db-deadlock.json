@@ -1,0 +1,10 @@
+{
+  "name": "stable key after a database deadlock",
+  "program": "correct-db-deadlock",
+  "order_id": "order_db_deadlock_2",
+  "actions": [
+    {"type": "deliver", "event_id": "event_captured", "status": "captured"},
+    {"type": "fulfill", "response": "db-deadlock"},
+    {"type": "fulfill", "response": "ok"}
+  ]
+}
