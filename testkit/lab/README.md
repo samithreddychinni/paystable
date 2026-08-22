@@ -76,6 +76,18 @@ go run ./testkit/lab closed-loop 50
 After each non-finding run, Scout records new trace states and updates its
 weights. The invariant checks remain the only finding authority.
 
+## Run the independent benchmark
+
+Evaluate all methods against merchant implementations outside the training simulator:
+
+```bash
+go run ./testkit/lab independent 50 7
+```
+
+The benchmark contains four vulnerable implementations and four correct implementations.
+The random baseline uses 20 consecutive seeds.
+The report includes Wilson 95% intervals for `Success@10`.
+
 ## Verify the constrained repair
 
 Verify the terminal-state repair after the Scout search gate passes:

@@ -186,6 +186,10 @@ func runScoutReport(corpus ProgramCorpus, budget int, closedLoop bool) (ScoutRep
 }
 
 func evaluateClosedLoop(program ProgramCase, candidates []searchCandidate, budget int, model ScoutModel) (BaselineRun, error) {
+	return evaluateClosedLoopWith(program, candidates, budget, model, Run)
+}
+
+func evaluateClosedLoopWith(program ProgramCase, candidates []searchCandidate, budget int, model ScoutModel, execute func(Schedule) (Result, error)) (BaselineRun, error) {
 	model.Weights = slices.Clone(model.Weights)
 	remaining := slices.Clone(candidates)
 	run := BaselineRun{Method: ScoutClosedLoopMethod, Program: program.Program}
@@ -204,13 +208,13 @@ func evaluateClosedLoop(program ProgramCase, candidates []searchCandidate, budge
 			Name: "Scout closed-loop candidate", Program: program.Program,
 			OrderID: fmt.Sprintf("order_scout_feedback_%d", run.Executions), Actions: candidate.actions,
 		}
-		result, err := Run(schedule)
+		result, err := execute(schedule)
 		if err != nil {
 			return BaselineRun{}, fmt.Errorf("execute Scout candidate %d: %w", run.Executions, err)
 		}
 		if len(result.Violations) != 0 {
 			run.ReplayChecks++
-			replay, err := Run(schedule)
+			replay, err := execute(schedule)
 			if err == nil && reflect.DeepEqual(result, replay) {
 				run.DeterministicReplays++
 				if resultHasInvariant(result, program.ExpectedInvariant) {

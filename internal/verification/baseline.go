@@ -94,6 +94,10 @@ func runBaseline(method string, program ProgramCase, maxActions, budget int, see
 }
 
 func evaluateCandidates(method string, program ProgramCase, candidates []searchCandidate, budget int) (BaselineRun, error) {
+	return evaluateCandidatesWith(method, program, candidates, budget, Run)
+}
+
+func evaluateCandidatesWith(method string, program ProgramCase, candidates []searchCandidate, budget int, execute func(Schedule) (Result, error)) (BaselineRun, error) {
 	run := BaselineRun{Method: method, Program: program.Program}
 	seenBehavior := make(map[string]bool)
 	for _, candidate := range candidates {
@@ -109,7 +113,7 @@ func evaluateCandidates(method string, program ProgramCase, candidates []searchC
 			Name: method + " search candidate", Program: program.Program,
 			OrderID: fmt.Sprintf("order_search_%d", run.Executions), Actions: candidate.actions,
 		}
-		result, err := Run(schedule)
+		result, err := execute(schedule)
 		if err != nil {
 			return BaselineRun{}, fmt.Errorf("execute %s candidate %d: %w", method, run.Executions, err)
 		}
@@ -117,7 +121,7 @@ func evaluateCandidates(method string, program ProgramCase, candidates []searchC
 			continue
 		}
 		run.ReplayChecks++
-		replay, err := Run(schedule)
+		replay, err := execute(schedule)
 		if err != nil || !reflect.DeepEqual(result, replay) {
 			continue
 		}

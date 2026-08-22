@@ -120,6 +120,8 @@ Its median execution count must beat each required baseline.
 It must report no false findings and replay every finding.
 The release will publish a negative result if Scout does not pass this gate.
 All retry transport outcomes use one held-out family.
+An independent benchmark must execute merchant code outside the training simulator.
+It must include vulnerable and correct implementations for each supported family.
 
 ## Stretch work
 
