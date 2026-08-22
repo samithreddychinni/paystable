@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -206,19 +207,35 @@ func (a *app) acceptCallback(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *app) acceptWebhook(w http.ResponseWriter, r *http.Request) {
+	slog.Info("Razorpay webhook received",
+		"content_length", r.ContentLength,
+		"chunked", len(r.TransferEncoding) > 0,
+		"expects_continue", strings.EqualFold(r.Header.Get("Expect"), "100-continue"),
+	)
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
 	signature := r.Header.Get("X-Razorpay-Signature")
 	eventID := r.Header.Get("X-Razorpay-Event-Id")
-	if err != nil || eventID == "" || !razorpay.VerifyWebhookSignature(body, signature, a.webhookSecret) {
+	if err != nil {
+		slog.Warn("Razorpay webhook rejected", "reason", "body_read_failed")
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid Razorpay webhook"})
+		return
+	}
+	if eventID == "" {
+		slog.Warn("Razorpay webhook rejected", "reason", "event_id_missing")
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid Razorpay webhook"})
+		return
+	}
+	if !razorpay.VerifyWebhookSignature(body, signature, a.webhookSecret) {
+		slog.Warn("Razorpay webhook rejected", "reason", "signature_invalid")
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid Razorpay webhook"})
 		return
 	}
 	fixture, err := json.MarshalIndent(struct {
-		RecordedAt string          `json:"recorded_at"`
-		EventID    string          `json:"event_id"`
-		Signature  string          `json:"signature"`
-		Body       json.RawMessage `json:"body"`
-	}{time.Now().UTC().Format(time.RFC3339Nano), eventID, signature, body}, "", "  ")
+		RecordedAt string `json:"recorded_at"`
+		EventID    string `json:"event_id"`
+		Signature  string `json:"signature"`
+		BodyBase64 string `json:"body_base64"`
+	}{time.Now().UTC().Format(time.RFC3339Nano), eventID, signature, base64.StdEncoding.EncodeToString(body)}, "", "  ")
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not encode the webhook fixture"})
 		return
@@ -231,6 +248,7 @@ func (a *app) acceptWebhook(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not save the webhook fixture"})
 		return
 	}
+	slog.Info("Razorpay webhook fixture saved")
 
 	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, a.paystableURL+"/webhooks/razorpay", bytes.NewReader(body))
 	if err != nil {

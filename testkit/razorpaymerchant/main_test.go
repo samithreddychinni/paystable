@@ -3,7 +3,9 @@ package main
 import (
 	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -74,8 +76,25 @@ func TestCreateOrderAndVerifyCheckout(t *testing.T) {
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("accept webhook returned %d: %s", recorder.Code, recorder.Body.String())
 	}
-	if _, err := os.Stat(a.fixturePath); err != nil {
+	savedFixture, err := os.ReadFile(a.fixturePath)
+	if err != nil {
 		t.Fatalf("signed fixture was not saved: %v", err)
+	}
+	var fixture struct {
+		Signature  string `json:"signature"`
+		BodyBase64 string `json:"body_base64"`
+	}
+	if err := json.Unmarshal(savedFixture, &fixture); err != nil {
+		t.Fatalf("signed fixture is invalid: %v", err)
+	}
+	savedBody, err := base64.StdEncoding.DecodeString(fixture.BodyBase64)
+	if err != nil || !hmac.Equal(savedBody, webhookBody) {
+		t.Fatal("signed fixture did not preserve the webhook body")
+	}
+	mac = hmac.New(sha256.New, []byte(a.webhookSecret))
+	_, _ = mac.Write(savedBody)
+	if fixture.Signature != hex.EncodeToString(mac.Sum(nil)) {
+		t.Fatal("saved webhook signature does not match its body")
 	}
 
 	a.callbackSecret = "callback-secret"
