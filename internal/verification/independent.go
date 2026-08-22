@@ -6,6 +6,8 @@ import (
 	"math"
 	"math/rand"
 	"slices"
+
+	"github.com/IDEA-Amrita/paystable/testkit/merchantcase"
 )
 
 type IndependentReport struct {
@@ -44,6 +46,12 @@ type independentCase struct {
 	execute func(Schedule) (Result, error)
 }
 
+type rawAmountMerchant interface {
+	Deliver([]byte) (bool, error)
+	Fulfill() error
+	Snapshot() merchantcase.Snapshot
+}
+
 type independentState struct {
 	running      bool
 	state        string
@@ -70,7 +78,7 @@ func RunIndependentReport(training ProgramCorpus, budget int, seed int64) (Indep
 		return IndependentReport{}, err
 	}
 	report := IndependentReport{
-		Version: 5, Evaluation: "independent-merchant-implementations",
+		Version: 6, Evaluation: "independent-merchant-implementations",
 		Budget: budget, Seed: seed, ScoutModelBytes: len(modelJSON),
 	}
 	for offset := int64(0); offset < 20; offset++ {
@@ -278,6 +286,20 @@ func independentCases() []independentCase {
 			program: ProgramCase{Program: "external-amount-safe", Family: "correct-amount"},
 			actions: []Action{trustedCaptured, trustedFailed, wrongAmount, fulfillOK},
 			execute: func(schedule Schedule) (Result, error) { return runIndependentAmount(schedule, false) },
+		},
+		{
+			program: ProgramCase{Program: "raw-json-amount-unsafe", Family: "payment-amount", ExpectedInvariant: InvariantExpectedAmount},
+			actions: []Action{trustedCaptured, trustedFailed, wrongAmount, fulfillOK},
+			execute: func(schedule Schedule) (Result, error) {
+				return runRawAmountMerchant(schedule, merchantcase.NewVulnerableAmount())
+			},
+		},
+		{
+			program: ProgramCase{Program: "raw-json-amount-safe", Family: "correct-amount"},
+			actions: []Action{trustedCaptured, trustedFailed, wrongAmount, fulfillOK},
+			execute: func(schedule Schedule) (Result, error) {
+				return runRawAmountMerchant(schedule, merchantcase.NewCorrectAmount(ExpectedPaymentAmount))
+			},
 		},
 	}
 }
@@ -704,4 +726,56 @@ func runIndependentAmount(schedule Schedule, unsafe bool) (Result, error) {
 		}
 	}
 	return s.result(schedule), nil
+}
+
+func runRawAmountMerchant(schedule Schedule, merchant rawAmountMerchant) (Result, error) {
+	if err := validateIndependent(schedule); err != nil {
+		return Result{}, err
+	}
+	var trace []TraceEntry
+	record := func(action, detail string) {
+		snapshot := merchant.Snapshot()
+		trace = append(trace, TraceEntry{
+			Sequence: len(trace) + 1, Action: action, Detail: detail,
+			State: snapshot.State, EffectCount: snapshot.EffectCount,
+		})
+	}
+	for _, action := range schedule.Actions {
+		switch action.Type {
+		case "deliver":
+			amount := action.Amount
+			if amount == 0 {
+				amount = ExpectedPaymentAmount
+			}
+			body, err := json.Marshal(struct {
+				EventID string `json:"event_id"`
+				Status  string `json:"status"`
+				Amount  int64  `json:"amount"`
+			}{action.EventID, action.Status, amount})
+			if err != nil {
+				return Result{}, err
+			}
+			accepted, err := merchant.Deliver(body)
+			if err != nil {
+				return Result{}, err
+			}
+			if !accepted {
+				record("reject", "payment amount mismatch rejected")
+				continue
+			}
+			if HasAmountMismatch(action) {
+				record("amount_mismatch_accept", "payment amount mismatch accepted")
+			}
+			record("deliver", "raw payment event processed")
+		case "fulfill":
+			if err := merchant.Fulfill(); err != nil {
+				return Result{}, err
+			}
+			record("fulfill", "fulfillment sink accepted the stable key")
+		default:
+			return Result{}, fmt.Errorf("raw amount merchant does not support %s", action.Type)
+		}
+	}
+	snapshot := merchant.Snapshot()
+	return ResultFor(schedule, snapshot.State, snapshot.CapturedOnce, snapshot.EffectCount, trace), nil
 }

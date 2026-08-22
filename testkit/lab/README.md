@@ -86,9 +86,12 @@ Evaluate all methods against merchant implementations outside the training simul
 go run ./testkit/lab independent 50 7
 ```
 
-The benchmark contains nine vulnerable implementations and nine correct implementations.
+The benchmark contains ten vulnerable implementations and ten correct implementations.
 The random baseline uses 20 consecutive seeds.
 The report includes Wilson 95% intervals for `Success@10`.
+Two amount implementations parse raw webhook JSON in a separate package.
+They do not import simulator code.
+They are repository-authored implementations, not third-party code.
 
 ## Verify the constrained repair
 
