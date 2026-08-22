@@ -1,0 +1,31 @@
+package webhook
+
+import (
+	"testing"
+
+	"github.com/flexprice/flexprice/internal/types"
+	"github.com/shopspring/decimal"
+)
+
+func TestPaystableProbeFindsAmountMismatch(t *testing.T) {
+	s := new(WebhookCheckoutBranchingSuite)
+	s.SetT(t)
+	s.SetupTest()
+	s.paymentSvc.payment.PaymentMethodType = types.PaymentMethodTypeCard
+	s.paymentSvc.payment.PaymentStatus = types.PaymentStatusPending
+	s.paymentSvc.payment.Amount = decimal.NewFromInt(500)
+	s.paymentSvc.payment.Currency = "INR"
+
+	event := &RazorpayWebhookEvent{Event: string(EventPaymentCaptured)}
+	event.Payload.Payment.Entity.ID = "pay_probe"
+	event.Payload.Payment.Entity.Amount = 1
+	event.Payload.Payment.Entity.Currency = "INR"
+	event.Payload.Payment.Entity.Notes = map[string]interface{}{"flexprice_payment_id": "pay_flex_001"}
+
+	if err := s.handler.handlePaymentCaptured(s.ctx, event, s.services); err != nil {
+		t.Fatal(err)
+	}
+	if s.paymentSvc.payment.PaymentStatus != types.PaymentStatusSucceeded {
+		t.Fatal("the handler rejected the changed payment amount")
+	}
+}
