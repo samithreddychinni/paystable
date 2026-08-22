@@ -7,8 +7,8 @@ import (
 
 func TestProgramCorpusGroundTruthReplaysDeterministically(t *testing.T) {
 	corpus := GenerateProgramCorpus()
-	if len(corpus.Programs) != 10 {
-		t.Fatalf("corpus has %d programs, want 10", len(corpus.Programs))
+	if len(corpus.Programs) != 12 {
+		t.Fatalf("corpus has %d programs, want 12", len(corpus.Programs))
 	}
 	for _, program := range corpus.Programs {
 		t.Run(program.Program, func(t *testing.T) {

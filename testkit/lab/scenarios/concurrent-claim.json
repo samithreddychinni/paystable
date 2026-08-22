@@ -1,0 +1,13 @@
+{
+  "name": "fulfillment before a concurrent event claim",
+  "program": "fulfill-before-concurrent-claim",
+  "order_id": "order_concurrent_1",
+  "actions": [
+    {
+      "type": "deliver",
+      "event_id": "event_parallel",
+      "status": "captured",
+      "parallel": 2
+    }
+  ]
+}

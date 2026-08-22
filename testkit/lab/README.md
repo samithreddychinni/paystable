@@ -62,8 +62,8 @@ go run ./testkit/lab scout 50
 
 The report includes the final model, evaluation fold models, search runs, and
 the same summary measures as the baselines. Each fold excludes its target
-family from training. Scout uses deterministic CPU training.
-The 20-weight model does not require a GPU.
+family from training. Scout starts with payment-risk priors and uses deterministic CPU training.
+The 21-weight model does not require a GPU.
 
 ## Run closed-loop Scout
 
@@ -84,7 +84,7 @@ Evaluate all methods against merchant implementations outside the training simul
 go run ./testkit/lab independent 50 7
 ```
 
-The benchmark contains four vulnerable implementations and four correct implementations.
+The benchmark contains five vulnerable implementations and five correct implementations.
 The random baseline uses 20 consecutive seeds.
 The report includes Wilson 95% intervals for `Success@10`.
 
@@ -139,6 +139,8 @@ output, Compose files, and the dashboard.
 | `stale-terminal-regression.json` | `INV-4` |
 | `invalid-signature.json` | `INV-SEC-1` |
 | `tampered-body.json` | `INV-SEC-1` |
+| `concurrent-claim.json` | `INV-2` |
+| `correct-concurrency.json` | none |
 | `correct-security.json` | none |
 | `correct.json` | none |
 
@@ -166,6 +168,7 @@ Docker runs the same fault contract over HTTP and PostgreSQL.
 The merchant verifies each raw delivery body before it decodes the JSON.
 The merchant stores events, payment state, effects, and traces in PostgreSQL.
 The laboratory creates real response timeouts, connection resets, and HTTP 500 responses.
+It also sends concurrent webhooks through competing PostgreSQL transactions.
 Docker restarts the merchant after each named crash or lost response.
 
 4. Reduce a failing schedule to a 1-minimal schedule:

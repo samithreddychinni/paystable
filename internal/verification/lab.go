@@ -6,6 +6,8 @@ import (
 
 const (
 	ProgramCorrect                 = "correct"
+	ProgramConcurrentBeforeClaim   = "fulfill-before-concurrent-claim"
+	ProgramCorrectConcurrency      = "correct-concurrency"
 	ProgramFulfillBeforeDedup      = "fulfill-before-dedup"
 	ProgramNewKeyOnRetry           = "new-key-on-retry"
 	ProgramNewKeyOnTimeout         = "new-key-on-timeout"
@@ -35,6 +37,7 @@ type Action struct {
 	CrashAt  string `json:"crash_at,omitempty"`
 	Response string `json:"response,omitempty"`
 	Trust    string `json:"trust,omitempty"`
+	Parallel int    `json:"parallel,omitempty"`
 }
 
 type TraceEntry struct {
@@ -144,15 +147,21 @@ func Validate(schedule Schedule) error {
 			if action.CrashAt != "" && action.CrashAt != "after_fulfillment" {
 				return fmt.Errorf("action %d has an invalid crash checkpoint", i+1)
 			}
+			if action.Parallel != 0 && action.Parallel != 2 {
+				return fmt.Errorf("action %d must use two parallel deliveries", i+1)
+			}
+			if action.Parallel != 0 && action.CrashAt != "" {
+				return fmt.Errorf("action %d cannot combine parallel delivery with a crash", i+1)
+			}
 		case "fulfill":
-			if action.EventID != "" || action.Status != "" || action.CrashAt != "" || action.Trust != "" {
+			if action.EventID != "" || action.Status != "" || action.CrashAt != "" || action.Trust != "" || action.Parallel != 0 {
 				return fmt.Errorf("action %d has fields that fulfill does not use", i+1)
 			}
 			if action.Response != "ok" && action.Response != "lost" && action.Response != "timeout" && action.Response != "connection-reset" && action.Response != "http-500" {
 				return fmt.Errorf("action %d has an invalid fulfillment response", i+1)
 			}
 		case "restart":
-			if action.EventID != "" || action.Status != "" || action.CrashAt != "" || action.Response != "" || action.Trust != "" {
+			if action.EventID != "" || action.Status != "" || action.CrashAt != "" || action.Response != "" || action.Trust != "" || action.Parallel != 0 {
 				return fmt.Errorf("action %d has fields that restart does not use", i+1)
 			}
 		default:
@@ -164,7 +173,7 @@ func Validate(schedule Schedule) error {
 
 func supportedProgram(program string) bool {
 	switch program {
-	case ProgramCorrect, ProgramFulfillBeforeDedup, ProgramNewKeyOnRetry, ProgramNewKeyOnTimeout,
+	case ProgramCorrect, ProgramConcurrentBeforeClaim, ProgramCorrectConcurrency, ProgramFulfillBeforeDedup, ProgramNewKeyOnRetry, ProgramNewKeyOnTimeout,
 		ProgramNewKeyOnReset, ProgramNewKeyOnServerError, ProgramTerminalRegression,
 		ProgramTerminalStable, ProgramAcceptUntrusted, ProgramCorrectSecurity, ProgramCorrectNetwork:
 		return true
@@ -179,7 +188,16 @@ func (r *runner) run(action Action) error {
 		r.record("restart", "merchant process restarted")
 		return nil
 	case "deliver":
-		return r.deliver(action)
+		copies := action.Parallel
+		if copies == 0 {
+			copies = 1
+		}
+		for range copies {
+			if err := r.deliver(action); err != nil {
+				return err
+			}
+		}
+		return nil
 	case "fulfill":
 		return r.fulfill(action)
 	}
@@ -189,10 +207,6 @@ func (r *runner) run(action Action) error {
 func (r *runner) deliver(action Action) error {
 	if !r.running {
 		return fmt.Errorf("cannot deliver %s while the merchant is stopped", action.EventID)
-	}
-	if r.seen[action.EventID] {
-		r.record("deliver", "duplicate event ignored")
-		return nil
 	}
 	trusted := action.Trust == "" || action.Trust == "valid"
 	if !trusted && r.schedule.Program != ProgramAcceptUntrusted {
@@ -204,7 +218,8 @@ func (r *runner) deliver(action Action) error {
 		r.record("untrusted_accept", "untrusted payment event accepted")
 	}
 
-	if r.schedule.Program == ProgramFulfillBeforeDedup && action.Status == "captured" {
+	beforeDedup := FulfillsBeforeDedup(r.schedule.Program, action)
+	if beforeDedup && action.Status == "captured" {
 		r.effectCount++
 		r.record("fulfill", "fulfillment occurred before durable event storage")
 		if action.CrashAt == "after_fulfillment" {
@@ -212,6 +227,10 @@ func (r *runner) deliver(action Action) error {
 			r.record("crash", "merchant crashed after fulfillment")
 			return nil
 		}
+	}
+	if r.seen[action.EventID] {
+		r.record("deliver", "duplicate event ignored")
+		return nil
 	}
 
 	r.seen[action.EventID] = true
@@ -222,12 +241,17 @@ func (r *runner) deliver(action Action) error {
 	}
 	if r.state == "captured" {
 		r.capturedOnce = true
-		if !wasCaptured && action.Status == "captured" && r.schedule.Program != ProgramFulfillBeforeDedup {
+		if !wasCaptured && action.Status == "captured" && !beforeDedup {
 			r.pendingEffect = true
 		}
 	}
 	r.record("deliver", "payment state updated")
 	return nil
+}
+
+// FulfillsBeforeDedup reports whether delivery can cause an effect before the event claim.
+func FulfillsBeforeDedup(program string, action Action) bool {
+	return program == ProgramFulfillBeforeDedup || (program == ProgramConcurrentBeforeClaim && action.Parallel == 2)
 }
 
 func (r *runner) fulfill(action Action) error {

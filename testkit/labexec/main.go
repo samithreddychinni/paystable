@@ -165,6 +165,31 @@ func verifyTrace(schedule verification.Schedule, result verification.Result) err
 }
 
 func (e *executor) deliver(action verification.Action, program string) error {
+	copies := action.Parallel
+	if copies == 0 {
+		copies = 1
+	}
+	if copies == 1 {
+		return e.deliverOnce(action, program)
+	}
+	start := make(chan struct{})
+	results := make(chan error, copies)
+	for range copies {
+		go func() {
+			<-start
+			results <- e.deliverOnce(action, program)
+		}()
+	}
+	close(start)
+	for range copies {
+		if err := <-results; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (e *executor) deliverOnce(action verification.Action, program string) error {
 	body, err := json.Marshal(action)
 	if err != nil {
 		return err

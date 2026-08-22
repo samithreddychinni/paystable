@@ -52,7 +52,7 @@ func CompileBehaviorGraph(program string, maxActions int) (BehaviorGraph, error)
 		schedule: Schedule{Name: "payment behavior graph", Program: program, OrderID: "order_graph"},
 		running:  true, seen: make(map[string]bool), effects: make(map[string]bool),
 	}
-	graph := BehaviorGraph{Version: 1, Program: program, MaxActions: maxActions}
+	graph := BehaviorGraph{Version: 2, Program: program, MaxActions: maxActions}
 	graph.Nodes = append(graph.Nodes, BehaviorNode{ID: 0, State: behaviorState(initial)})
 	states := []*runner{initial}
 	nodeByState := map[string]int{behaviorStateKey(0, initial): 0}
@@ -100,6 +100,9 @@ func behaviorActions(program string) []Action {
 		actions = slices.Insert(actions, 1, Action{
 			Type: "deliver", EventID: "event_captured", Status: "captured", CrashAt: "after_fulfillment",
 		})
+	}
+	if program == ProgramConcurrentBeforeClaim || program == ProgramCorrectConcurrency {
+		actions = append(actions, Action{Type: "deliver", EventID: "event_parallel", Status: "captured", Parallel: 2})
 	}
 	switch program {
 	case ProgramNewKeyOnTimeout, ProgramCorrectNetwork:

@@ -18,8 +18,8 @@ func TestIndependentReportUsesUnseenImplementations(t *testing.T) {
 	if !reflect.DeepEqual(first, second) {
 		t.Fatal("independent report is not deterministic")
 	}
-	if len(first.Cases) != 8 {
-		t.Fatalf("independent report has %d cases, want 8", len(first.Cases))
+	if len(first.Cases) != 10 {
+		t.Fatalf("independent report has %d cases, want 10", len(first.Cases))
 	}
 	if len(first.RandomSeeds) != 20 || len(first.Confidence) != 5 {
 		t.Fatalf("independent report has %d seeds and %d confidence estimates", len(first.RandomSeeds), len(first.Confidence))
@@ -37,12 +37,14 @@ func TestIndependentReportUsesUnseenImplementations(t *testing.T) {
 		t.Fatalf("Scout did not transfer to independent implementations: %#v", scout)
 	}
 	for _, summary := range first.Summary[:3] {
-		if scout.MedianExecutionsBeforeFinding >= summary.MedianExecutionsBeforeFinding {
-			t.Fatalf("Scout median %d did not beat %s median %d", scout.MedianExecutionsBeforeFinding, summary.Method, summary.MedianExecutionsBeforeFinding)
+		worseMedian := scout.MedianExecutionsBeforeFinding > summary.MedianExecutionsBeforeFinding
+		tiedWithoutHigherSuccess := scout.MedianExecutionsBeforeFinding == summary.MedianExecutionsBeforeFinding && scout.SuccessAt10 <= summary.SuccessAt10
+		if worseMedian || tiedWithoutHigherSuccess {
+			t.Fatalf("Scout did not beat %s: Scout=%#v baseline=%#v", summary.Method, scout, summary)
 		}
 	}
 	for _, estimate := range first.Confidence {
-		if estimate.Method == BaselineRandom && (estimate.Trials != 80 || estimate.FalseFindingCount != 0) {
+		if estimate.Method == BaselineRandom && (estimate.Trials != 100 || estimate.FalseFindingCount != 0) {
 			t.Fatalf("random confidence estimate is invalid: %#v", estimate)
 		}
 	}

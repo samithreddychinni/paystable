@@ -175,7 +175,7 @@ func (a *app) deliver(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "deliver action is not legal", http.StatusBadRequest)
 		return
 	}
-	if current.program == verification.ProgramFulfillBeforeDedup && action.Status == "captured" {
+	if verification.FulfillsBeforeDedup(current.program, action) && action.Status == "captured" {
 		if err := a.effectBeforeDedup(r, current.orderID); err != nil {
 			http.Error(w, "could not record fulfillment", http.StatusInternalServerError)
 			return
@@ -204,11 +204,8 @@ func (a *app) effectBeforeDedup(r *http.Request, orderID string) error {
 		return err
 	}
 	defer tx.Rollback()
-	var count int
-	if err := tx.QueryRowContext(r.Context(), `SELECT count(*) FROM lab_effects`).Scan(&count); err != nil {
-		return err
-	}
-	if _, err := tx.ExecContext(r.Context(), `INSERT INTO lab_effects (effect_key, order_id) VALUES ($1, $2)`, fmt.Sprintf("unkeyed:%d", count+1), orderID); err != nil {
+	if _, err := tx.ExecContext(r.Context(), `
+		INSERT INTO lab_effects (effect_key, order_id) VALUES ('unkeyed:' || txid_current()::text, $1)`, orderID); err != nil {
 		return err
 	}
 	if err := recordTx(r.Context(), tx, "fulfill", "fulfillment occurred before durable event storage"); err != nil {
@@ -256,7 +253,7 @@ func (a *app) storeEvent(r *http.Request, action verification.Action, untrusted 
 		newState = action.Status
 	}
 	pending := current.pendingEffect
-	if current.paymentState != "captured" && newState == "captured" && action.Status == "captured" && current.program != verification.ProgramFulfillBeforeDedup {
+	if current.paymentState != "captured" && newState == "captured" && action.Status == "captured" && !verification.FulfillsBeforeDedup(current.program, action) {
 		pending = true
 	}
 	if _, err := tx.ExecContext(r.Context(), `

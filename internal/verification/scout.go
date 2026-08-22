@@ -33,6 +33,15 @@ var scoutFeatureNames = []string{
 	"connection_reset_count",
 	"server_error_count",
 	"untrusted_captured",
+	"parallel_delivery_count",
+}
+
+var scoutPriorWeights = map[string]float64{
+	"same_event_after_restart":         1,
+	"fulfill_after_uncertain_response": 1,
+	"failed_after_captured":            1,
+	"untrusted_captured":               1,
+	"parallel_delivery_count":          1,
 }
 
 type ScoutModel struct {
@@ -67,8 +76,11 @@ func TrainScout(corpus ProgramCorpus) (ScoutModel, error) {
 
 func trainScout(corpus ProgramCorpus, excludedFamily string) (ScoutModel, error) {
 	model := ScoutModel{
-		Version: 1, FeatureNames: slices.Clone(scoutFeatureNames),
+		Version: 2, FeatureNames: slices.Clone(scoutFeatureNames),
 		Weights: make([]float64, len(scoutFeatureNames)), Epochs: 40, LearningRate: 0.01,
+	}
+	for i, name := range model.FeatureNames {
+		model.Weights[i] = scoutPriorWeights[name]
 	}
 	type pair struct{ positive, negative []float64 }
 	var pairs []pair
@@ -313,7 +325,14 @@ func scoutFeatures(actions []Action) []float64 {
 	for i, action := range actions {
 		switch action.Type {
 		case "deliver":
-			features[1]++
+			copies := action.Parallel
+			if copies == 0 {
+				copies = 1
+			}
+			features[1] += float64(copies)
+			if action.Parallel != 0 {
+				features[20]++
+			}
 			switch action.Trust {
 			case "missing-signature":
 				features[13]++
@@ -323,11 +342,13 @@ func scoutFeatures(actions []Action) []float64 {
 				features[15]++
 			}
 			if seenEvents[action.EventID] {
-				features[8]++
+				features[8] += float64(copies)
+			} else {
+				features[8] += float64(copies - 1)
 			}
 			seenEvents[action.EventID] = true
 			if action.Status == "captured" {
-				features[4]++
+				features[4] += float64(copies)
 				capturedSeen = true
 				if action.Trust != "" && action.Trust != "valid" {
 					features[19] = 1

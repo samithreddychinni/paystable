@@ -1,0 +1,14 @@
+{
+  "name": "correct concurrent event claim",
+  "program": "correct-concurrency",
+  "order_id": "order_concurrent_2",
+  "actions": [
+    {
+      "type": "deliver",
+      "event_id": "event_parallel",
+      "status": "captured",
+      "parallel": 2
+    },
+    {"type": "fulfill", "response": "ok"}
+  ]
+}

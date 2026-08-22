@@ -17,7 +17,7 @@ type ProgramCase struct {
 
 // GenerateProgramCorpus returns the executable programs and their canonical schedules.
 func GenerateProgramCorpus() ProgramCorpus {
-	return ProgramCorpus{Version: 1, MaxScheduleActions: 4, Programs: []ProgramCase{
+	return ProgramCorpus{Version: 2, MaxScheduleActions: 4, Programs: []ProgramCase{
 		{
 			Family: "deduplication-order", Program: ProgramFulfillBeforeDedup,
 			GroundTruth: Schedule{
@@ -27,6 +27,14 @@ func GenerateProgramCorpus() ProgramCorpus {
 					{Type: "restart"},
 					{Type: "deliver", EventID: "event_captured", Status: "captured"},
 				},
+			},
+			ExpectedInvariant: InvariantFulfillmentAtMostOnce, ExpectedFinalState: "captured", ExpectedEffectCount: 2,
+		},
+		{
+			Family: "concurrent-deduplication", Program: ProgramConcurrentBeforeClaim,
+			GroundTruth: Schedule{
+				Name: "fulfillment before a concurrent event claim", Program: ProgramConcurrentBeforeClaim, OrderID: "order_corpus_concurrent_1",
+				Actions: []Action{{Type: "deliver", EventID: "event_parallel", Status: "captured", Parallel: 2}},
 			},
 			ExpectedInvariant: InvariantFulfillmentAtMostOnce, ExpectedFinalState: "captured", ExpectedEffectCount: 2,
 		},
@@ -132,6 +140,17 @@ func GenerateProgramCorpus() ProgramCorpus {
 				Actions: []Action{
 					{Type: "deliver", EventID: "event_captured", Status: "captured"},
 					{Type: "fulfill", Response: "timeout"},
+					{Type: "fulfill", Response: "ok"},
+				},
+			},
+			ExpectedFinalState: "captured", ExpectedEffectCount: 1,
+		},
+		{
+			Family: "correct-concurrency", Program: ProgramCorrectConcurrency,
+			GroundTruth: Schedule{
+				Name: "correct concurrent event claim", Program: ProgramCorrectConcurrency, OrderID: "order_corpus_concurrent_2",
+				Actions: []Action{
+					{Type: "deliver", EventID: "event_parallel", Status: "captured", Parallel: 2},
 					{Type: "fulfill", Response: "ok"},
 				},
 			},

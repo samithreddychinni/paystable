@@ -70,14 +70,14 @@ func RunIndependentReport(training ProgramCorpus, budget int, seed int64) (Indep
 		return IndependentReport{}, err
 	}
 	report := IndependentReport{
-		Version: 1, Evaluation: "independent-merchant-implementations",
+		Version: 2, Evaluation: "independent-merchant-implementations",
 		Budget: budget, Seed: seed, ScoutModelBytes: len(modelJSON),
 	}
 	for offset := int64(0); offset < 20; offset++ {
 		report.RandomSeeds = append(report.RandomSeeds, seed+offset)
 	}
 	cases := independentCases()
-	corpus := ProgramCorpus{Version: 1, MaxScheduleActions: 4}
+	corpus := ProgramCorpus{Version: training.Version, MaxScheduleActions: 4}
 	var randomTrials []BaselineRun
 	for i, testCase := range cases {
 		candidates, err := enumerateIndependentCandidates(testCase, corpus.MaxScheduleActions)
@@ -182,6 +182,7 @@ func successConfidence(method string, corpus ProgramCorpus, runs []BaselineRun) 
 func independentCases() []independentCase {
 	trustedCaptured := Action{Type: "deliver", EventID: "captured", Status: "captured"}
 	trustedFailed := Action{Type: "deliver", EventID: "failed", Status: "failed"}
+	parallelCaptured := Action{Type: "deliver", EventID: "parallel", Status: "captured", Parallel: 2}
 	fulfillOK := Action{Type: "fulfill", Response: "ok"}
 	return []independentCase{
 		{
@@ -203,6 +204,16 @@ func independentCases() []independentCase {
 			program: ProgramCase{Program: "external-retry-safe", Family: "correct-retry"},
 			actions: retryActions(trustedCaptured, trustedFailed, fulfillOK),
 			execute: func(schedule Schedule) (Result, error) { return runIndependentRetry(schedule, false) },
+		},
+		{
+			program: ProgramCase{Program: "external-concurrent-unsafe", Family: "concurrent-deduplication", ExpectedInvariant: InvariantFulfillmentAtMostOnce},
+			actions: []Action{trustedCaptured, trustedFailed, parallelCaptured, fulfillOK},
+			execute: func(schedule Schedule) (Result, error) { return runIndependentConcurrent(schedule, true) },
+		},
+		{
+			program: ProgramCase{Program: "external-concurrent-safe", Family: "correct-concurrency"},
+			actions: []Action{trustedCaptured, trustedFailed, parallelCaptured, fulfillOK},
+			execute: func(schedule Schedule) (Result, error) { return runIndependentConcurrent(schedule, false) },
 		},
 		{
 			program: ProgramCase{Program: "external-terminal-unsafe", Family: "terminal-state", ExpectedInvariant: InvariantTerminalStateStable},
@@ -411,6 +422,59 @@ func runIndependentRetry(schedule Schedule, unsafe bool) (Result, error) {
 			s.pending = action.Response != "ok"
 		default:
 			return Result{}, fmt.Errorf("retry merchant does not support %s", action.Type)
+		}
+	}
+	return s.result(schedule), nil
+}
+
+func runIndependentConcurrent(schedule Schedule, unsafe bool) (Result, error) {
+	if err := validateIndependent(schedule); err != nil {
+		return Result{}, err
+	}
+	s := newIndependentState()
+	for _, action := range schedule.Actions {
+		switch action.Type {
+		case "deliver":
+			if !trusted(action) {
+				s.record("reject", "untrusted payment event rejected")
+				continue
+			}
+			copies := action.Parallel
+			if copies == 0 {
+				copies = 1
+			}
+			for range copies {
+				beforeClaim := unsafe && action.Parallel == 2 && action.Status == "captured"
+				if beforeClaim {
+					s.effectCount++
+					s.record("fulfill", "fulfillment occurred before the event claim")
+				}
+				if s.seen[action.EventID] {
+					s.record("deliver", "duplicate event ignored")
+					continue
+				}
+				s.seen[action.EventID] = true
+				if s.state != "captured" {
+					s.state = action.Status
+				}
+				if s.state == "captured" {
+					s.capturedOnce = true
+					s.pending = !beforeClaim
+				}
+				s.record("deliver", "payment state updated")
+			}
+		case "fulfill":
+			if !s.pending {
+				return Result{}, fmt.Errorf("payment is not ready for fulfillment")
+			}
+			if !s.effects[schedule.OrderID] {
+				s.effects[schedule.OrderID] = true
+				s.effectCount++
+			}
+			s.pending = action.Response != "ok"
+			s.record("fulfill", "fulfillment sink accepted the stable key")
+		default:
+			return Result{}, fmt.Errorf("concurrent merchant does not support %s", action.Type)
 		}
 	}
 	return s.result(schedule), nil

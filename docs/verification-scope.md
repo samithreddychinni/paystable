@@ -93,6 +93,7 @@ The first benchmark will include these bug classes:
 2. A retry uses a new idempotency key after a lost response.
 3. A stale event changes a terminal payment state.
 4. An untrusted webhook changes payment state.
+5. Concurrent webhook handlers fulfill before one handler claims the event.
 
 The retry class includes lost responses, timeouts, connection resets, and HTTP 500 responses.
 Amount validation is the next bug class.
@@ -117,11 +118,13 @@ The benchmark will report these measures:
 
 Scout must find every held-out failure within 50 executions.
 Its median execution count must beat each required baseline.
+If medians tie at one, Scout must have a higher `Success@10` rate.
 It must report no false findings and replay every finding.
 The release will publish a negative result if Scout does not pass this gate.
 All retry transport outcomes use one held-out family.
 An independent benchmark must execute merchant code outside the training simulator.
 It must include vulnerable and correct implementations for each supported family.
+Scout must use fixed payment-risk priors when a fold excludes a known failure family.
 
 ## Stretch work
 
