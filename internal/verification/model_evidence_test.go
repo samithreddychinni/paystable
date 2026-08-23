@@ -11,7 +11,8 @@ func TestModelEvidenceIncludesFrozenAblations(t *testing.T) {
 		t.Fatalf("model evidence is incomplete: %#v", report)
 	}
 	for _, ablation := range report.Ablations {
-		if ablation.Summary.FalseFindingCount != 0 || ablation.Summary.DeterministicReplayRate != 1 {
+		if ablation.Summary.FalseFindingCount != 0 || ablation.Summary.DeterministicReplayRate != 1 ||
+			ablation.ClosedLoopSummary.FalseFindingCount != 0 || ablation.ClosedLoopSummary.DeterministicReplayRate != 1 {
 			t.Fatalf("ablation %s failed its evidence gate: %#v", ablation.Name, ablation.Summary)
 		}
 	}

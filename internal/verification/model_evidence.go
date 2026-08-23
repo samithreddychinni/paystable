@@ -7,11 +7,12 @@ import (
 )
 
 type ModelAblation struct {
-	Name        string          `json:"name"`
-	Trained     bool            `json:"trained"`
-	FixedPriors bool            `json:"fixed_priors"`
-	ModelBytes  int             `json:"model_bytes"`
-	Summary     BaselineSummary `json:"summary"`
+	Name              string          `json:"name"`
+	Trained           bool            `json:"trained"`
+	FixedPriors       bool            `json:"fixed_priors"`
+	ModelBytes        int             `json:"model_bytes"`
+	Summary           BaselineSummary `json:"summary"`
+	ClosedLoopSummary BaselineSummary `json:"closed_loop_summary"`
 }
 
 type ModelEvidenceReport struct {
@@ -64,7 +65,7 @@ func RunModelEvidenceReport(budget int) (ModelEvidenceReport, error) {
 		return ModelEvidenceReport{}, err
 	}
 	report := ModelEvidenceReport{
-		Version: 1, ArtifactFormat: "compact JSON", ArtifactBytes: len(artifact),
+		Version: 2, ArtifactFormat: "compact JSON", ArtifactBytes: len(artifact),
 		ParameterCount: len(trained.Weights), TrainingSeed: "none because training order is deterministic",
 		TrainingSet: "14 vulnerable synthetic programs", ValidationSet: "none because the frozen model has no selection step",
 		RegressionSet: "14 vulnerable programs and 11 correct controls", EvaluationSet: "8 frozen held-out merchant implementations",
@@ -77,23 +78,27 @@ func RunModelEvidenceReport(budget int) (ModelEvidenceReport, error) {
 		if err != nil {
 			return ModelEvidenceReport{}, err
 		}
-		summary, err := evaluateHeldOutModel(candidate.name, candidate.model, budget)
+		summary, err := evaluateHeldOutModel(candidate.name, candidate.model, budget, false)
 		if err != nil {
 			return ModelEvidenceReport{}, err
 		}
-		if summary.FalseFindingCount != 0 || summary.DeterministicReplayRate != 1 {
+		closed, err := evaluateHeldOutModel(candidate.name+"-closed-loop", candidate.model, budget, true)
+		if err != nil {
+			return ModelEvidenceReport{}, err
+		}
+		if summary.FalseFindingCount != 0 || summary.DeterministicReplayRate != 1 || closed.FalseFindingCount != 0 || closed.DeterministicReplayRate != 1 {
 			return ModelEvidenceReport{}, fmt.Errorf("ablation %q failed its evidence gate", candidate.name)
 		}
 		report.Ablations = append(report.Ablations, ModelAblation{
 			Name: candidate.name, Trained: candidate.trained, FixedPriors: candidate.fixedPriors,
-			ModelBytes: len(modelJSON), Summary: summary,
+			ModelBytes: len(modelJSON), Summary: summary, ClosedLoopSummary: closed,
 		})
 	}
 	report.Passed = true
 	return report, nil
 }
 
-func evaluateHeldOutModel(method string, model ScoutModel, budget int) (BaselineSummary, error) {
+func evaluateHeldOutModel(method string, model ScoutModel, budget int, closedLoop bool) (BaselineSummary, error) {
 	corpus := ProgramCorpus{Version: 1, MaxScheduleActions: 4}
 	var runs []BaselineRun
 	for _, testCase := range heldoutCases() {
@@ -101,11 +106,17 @@ func evaluateHeldOutModel(method string, model ScoutModel, budget int) (Baseline
 		if err != nil {
 			return BaselineSummary{}, err
 		}
-		rankScoutCandidates(candidates, model)
-		run, err := evaluateCandidatesWith(method, testCase.program, slices.Clone(candidates), budget, testCase.execute)
+		var run BaselineRun
+		if closedLoop {
+			run, err = evaluateClosedLoopWith(testCase.program, candidates, budget, model, testCase.execute)
+		} else {
+			rankScoutCandidates(candidates, model)
+			run, err = evaluateCandidatesWith(method, testCase.program, slices.Clone(candidates), budget, testCase.execute)
+		}
 		if err != nil {
 			return BaselineSummary{}, err
 		}
+		run.Method = method
 		corpus.Programs = append(corpus.Programs, testCase.program)
 		runs = append(runs, run)
 	}

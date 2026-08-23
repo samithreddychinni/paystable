@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "artifact_format": "compact JSON",
   "artifact_bytes": 1007,
   "parameter_count": 24,
@@ -90,6 +90,20 @@
         "false_finding_count": 0,
         "deterministic_replay_rate": 1,
         "redundant_schedule_rate": 0.9261083743842364
+      },
+      "closed_loop_summary": {
+        "method": "trained-with-fixed-priors-closed-loop",
+        "success_at_1": 0.5,
+        "success_at_3": 1,
+        "success_at_5": 1,
+        "success_at_10": 1,
+        "success_at_25": 1,
+        "success_at_50": 1,
+        "median_executions_before_finding": 1.5,
+        "mean_reciprocal_rank": 0.75,
+        "false_finding_count": 0,
+        "deterministic_replay_rate": 1,
+        "redundant_schedule_rate": 0.9193548387096774
       }
     },
     {
@@ -110,6 +124,20 @@
         "false_finding_count": 0,
         "deterministic_replay_rate": 1,
         "redundant_schedule_rate": 0.9202127659574468
+      },
+      "closed_loop_summary": {
+        "method": "fixed-priors-only-closed-loop",
+        "success_at_1": 0.75,
+        "success_at_3": 1,
+        "success_at_5": 1,
+        "success_at_10": 1,
+        "success_at_25": 1,
+        "success_at_50": 1,
+        "median_executions_before_finding": 1,
+        "mean_reciprocal_rank": 0.875,
+        "false_finding_count": 0,
+        "deterministic_replay_rate": 1,
+        "redundant_schedule_rate": 0.9135135135135135
       }
     },
     {
@@ -130,6 +158,20 @@
         "false_finding_count": 0,
         "deterministic_replay_rate": 1,
         "redundant_schedule_rate": 0.9261083743842364
+      },
+      "closed_loop_summary": {
+        "method": "trained-without-priors-closed-loop",
+        "success_at_1": 0.5,
+        "success_at_3": 1,
+        "success_at_5": 1,
+        "success_at_10": 1,
+        "success_at_25": 1,
+        "success_at_50": 1,
+        "median_executions_before_finding": 1.5,
+        "mean_reciprocal_rank": 0.75,
+        "false_finding_count": 0,
+        "deterministic_replay_rate": 1,
+        "redundant_schedule_rate": 0.9193548387096774
       }
     },
     {
@@ -150,6 +192,20 @@
         "false_finding_count": 0,
         "deterministic_replay_rate": 1,
         "redundant_schedule_rate": 0.9071428571428571
+      },
+      "closed_loop_summary": {
+        "method": "zero-weights-closed-loop",
+        "success_at_1": 0,
+        "success_at_3": 0.75,
+        "success_at_5": 1,
+        "success_at_10": 1,
+        "success_at_25": 1,
+        "success_at_50": 1,
+        "median_executions_before_finding": 2,
+        "mean_reciprocal_rank": 0.4375,
+        "false_finding_count": 0,
+        "deterministic_replay_rate": 1,
+        "redundant_schedule_rate": 0.8947368421052632
       }
     }
   ],

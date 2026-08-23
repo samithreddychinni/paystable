@@ -113,8 +113,18 @@ We must not tune Scout against this held-out result.
 A future evaluation needs a replacement held-out set after any model change.
 
 Closed-loop Scout is a separate method.
-It uses deterministic runtime observations and found all four held-out failures within three schedules.
-A matched closed-loop ablation remains required before that method can carry the AI claim.
+It uses deterministic runtime observations to update schedule weights.
+
+| Starting ranker | Success@3 | Success@10 | Median rank | MRR |
+|---|---:|---:|---:|---:|
+| Trained with fixed priors | 100% | 100% | 1.5 | 0.750 |
+| Fixed priors only | 100% | 100% | 1.0 | 0.875 |
+| Trained without priors | 100% | 100% | 1.5 | 0.750 |
+| Zero weights | 75% | 100% | 2.0 | 0.438 |
+
+Closed-loop feedback improves the weak zero-weight start.
+However, fixed priors alone still outperform the trained starts.
+Therefore, closed-loop Scout also does not pass the learned-versus-prior ablation criterion.
 
 ## Local inference measurement
 

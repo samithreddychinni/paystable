@@ -121,7 +121,7 @@ Scout finds all 14 known failures within ten schedules.
 
 The frozen held-out set has four vulnerable merchants and four correct controls.
 Standard Scout finds three failures within ten schedules and all four within 25 schedules.
-The fixed-prior-only ablation performs better on this small held-out set.
+The fixed-prior-only ablation performs better in both static and closed-loop modes.
 
 These bounded results do not prove production accuracy.
 See [Scout model evidence](docs/scout-model.md), [Verification scope](docs/verification-scope.md), and [Submission demo](docs/submission-demo.md).

@@ -256,7 +256,7 @@ export default function TestKit() {
               Razorpay and PayU produced the same normalized results for all {crossAdapterCases} cross-adapter schedules.
             </p>
             <p className="mt-1 max-w-3xl text-xs leading-5 text-text-muted">
-              The fixed-prior-only ablation ranks this small held-out set earlier than the batch-trained ranker.
+              Fixed priors alone rank this small held-out set earlier with and without runtime feedback.
             </p>
           </section>
         </>
