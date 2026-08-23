@@ -21,7 +21,7 @@ func TestPerformanceReportMeasuresAllSearchMethods(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.ModelBytes == 0 || report.InferenceEvaluations == 0 || report.InferenceNanosecondsPerSchedule <= 0 {
+	if report.GoVersion == "" || report.GOOS == "" || report.GOARCH == "" || report.LogicalCPUs < 1 || report.ModelBytes == 0 || report.InferenceEvaluations == 0 || report.InferenceNanosecondsPerSchedule <= 0 {
 		t.Fatalf("inference measurement is incomplete: %#v", report)
 	}
 	if report.PeakGoHeapInuseBytes < report.StartGoHeapInuseBytes {

@@ -37,6 +37,9 @@ go run ./testkit/lab demo >"$check_dir/demo-one.json"
 go run ./testkit/lab demo >"$check_dir/demo-two.json"
 cmp "$check_dir/demo-one.json" "$check_dir/demo-two.json"
 grep -q '"passed": true' "$check_dir/demo-one.json"
+go run ./testkit/lab model-evidence >"$check_dir/model-evidence.json"
+grep -q '"passed": true' "$check_dir/model-evidence.json"
+cmp "$check_dir/model-evidence.json" docs/evidence/model-evidence.json
 
 printf '%s\n' 'Check Compose files.'
 docker compose -f docker-compose.lab.yml config -q

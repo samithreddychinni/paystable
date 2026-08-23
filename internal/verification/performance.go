@@ -11,6 +11,10 @@ import (
 
 type PerformanceReport struct {
 	Version                         int                  `json:"version"`
+	GoVersion                       string               `json:"go_version"`
+	GOOS                            string               `json:"goos"`
+	GOARCH                          string               `json:"goarch"`
+	LogicalCPUs                     int                  `json:"logical_cpus"`
 	Budget                          int                  `json:"budget"`
 	Seed                            int64                `json:"seed"`
 	ModelBytes                      int                  `json:"model_bytes"`
@@ -67,7 +71,8 @@ func RunPerformanceReport(corpus ProgramCorpus, budget int, seed int64, repetiti
 	}()
 
 	report = PerformanceReport{
-		Version: 1, Budget: budget, Seed: seed, InferenceRepetitions: repetitions,
+		Version: 1, GoVersion: runtime.Version(), GOOS: runtime.GOOS, GOARCH: runtime.GOARCH,
+		LogicalCPUs: runtime.NumCPU(), Budget: budget, Seed: seed, InferenceRepetitions: repetitions,
 		HeapSampleIntervalNanoseconds: sampleInterval.Nanoseconds(), StartGoHeapInuseBytes: startHeap,
 	}
 	model, err := TrainScout(corpus)

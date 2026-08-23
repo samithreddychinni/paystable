@@ -38,6 +38,15 @@ func main() {
 		writeJSON(report)
 		return
 	}
+	if len(os.Args) == 2 && os.Args[1] == "model-evidence" {
+		report, err := verification.RunModelEvidenceReport(50)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "create model evidence:", err)
+			os.Exit(1)
+		}
+		writeJSON(report)
+		return
+	}
 	if len(os.Args) == 2 && os.Args[1] == "repair" {
 		report, err := verification.VerifyTerminalStateRepair(verification.GenerateProgramCorpus())
 		if err != nil {
@@ -235,7 +244,7 @@ func main() {
 		return
 	}
 	if len(os.Args) != 2 {
-		fmt.Fprintln(os.Stderr, "usage: lab SCHEDULE.json\n       lab baselines BUDGET SEED\n       lab closed-loop BUDGET\n       lab corpus\n       lab cross-adapter\n       lab demo\n       lab external-transfer\n       lab graph PROGRAM MAX_ACTIONS\n       lab heldout BUDGET SEED\n       lab independent BUDGET SEED\n       lab invariants\n       lab performance BUDGET SEED REPETITIONS\n       lab prior-free BUDGET\n       lab prior-free-stress BUDGET SEED\n       lab repair\n       lab replay-window\n       lab replay-window-v3\n       lab scout BUDGET")
+		fmt.Fprintln(os.Stderr, "usage: lab SCHEDULE.json\n       lab baselines BUDGET SEED\n       lab closed-loop BUDGET\n       lab corpus\n       lab cross-adapter\n       lab demo\n       lab external-transfer\n       lab graph PROGRAM MAX_ACTIONS\n       lab heldout BUDGET SEED\n       lab independent BUDGET SEED\n       lab invariants\n       lab model-evidence\n       lab performance BUDGET SEED REPETITIONS\n       lab prior-free BUDGET\n       lab prior-free-stress BUDGET SEED\n       lab repair\n       lab replay-window\n       lab replay-window-v3\n       lab scout BUDGET")
 		os.Exit(2)
 	}
 	file, err := os.Open(os.Args[1])

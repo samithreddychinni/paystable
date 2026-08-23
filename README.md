@@ -116,11 +116,15 @@ Run the deterministic demonstration:
 go run ./testkit/lab demo
 ```
 
-The current demonstration has 25 programs: 14 vulnerable programs and 11 correct controls. With a budget of 10 schedules per program, Scout finds all 14 known failures with a median rank of 1 and no findings in the correct controls. The same run reports these baseline success rates: bounded search 50%, random search 85.7%, and coverage-guided search 92.9%.
+The regression laboratory has 14 vulnerable programs and 11 correct controls.
+Scout finds all 14 known failures within ten schedules.
 
-The independent benchmark contains 24 repository-authored implementations. Scout finds all 12 vulnerable implementations within 10 schedules and reports no failures in the 12 correct implementations.
+The frozen held-out set has four vulnerable merchants and four correct controls.
+Standard Scout finds three failures within ten schedules and all four within 25 schedules.
+The fixed-prior-only ablation performs better on this small held-out set.
 
-These are deterministic, bounded laboratory results. They do not prove production accuracy. The repository also contains pinned third-party probes and one genuine Razorpay Test Mode webhook, but those checks are not part of the Scout performance report. See [Verification scope](docs/verification-scope.md) and [Submission demo](docs/submission-demo.md) for the evidence boundary and demo order.
+These bounded results do not prove production accuracy.
+See [Scout model evidence](docs/scout-model.md), [Verification scope](docs/verification-scope.md), and [Submission demo](docs/submission-demo.md).
 
 ---
 

@@ -86,6 +86,14 @@ the same summary measures as the baselines. Each fold excludes its target
 family from training. Scout starts with payment-risk priors and uses deterministic CPU training.
 The 24-weight model does not require a GPU.
 
+Generate the frozen model and ablation evidence:
+
+```bash
+go run ./testkit/lab model-evidence
+```
+
+See [Scout model evidence](../../docs/scout-model.md) for the training contract and limitations.
+
 ## Measure prior-free generalization
 
 Run held-out evaluation without fixed payment-risk priors:

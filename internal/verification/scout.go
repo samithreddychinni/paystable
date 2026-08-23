@@ -174,15 +174,7 @@ func trainScout(corpus ProgramCorpus, excludedFamily string) (ScoutModel, error)
 }
 
 func trainScoutWithPriors(corpus ProgramCorpus, excludedFamily string, fixedPriors bool) (ScoutModel, error) {
-	model := ScoutModel{
-		Version: 2, FeatureNames: slices.Clone(scoutFeatureNames),
-		Weights: make([]float64, len(scoutFeatureNames)), Epochs: 40, LearningRate: 0.01,
-	}
-	if fixedPriors {
-		for i, name := range model.FeatureNames {
-			model.Weights[i] = scoutPriorWeights[name]
-		}
-	}
+	model := newScoutModel(fixedPriors)
 	type pair struct{ positive, negative []float64 }
 	var pairs []pair
 	for _, program := range corpus.Programs {
@@ -231,6 +223,19 @@ func trainScoutWithPriors(corpus ProgramCorpus, excludedFamily string, fixedPrio
 		}
 	}
 	return model, nil
+}
+
+func newScoutModel(fixedPriors bool) ScoutModel {
+	model := ScoutModel{
+		Version: 2, FeatureNames: slices.Clone(scoutFeatureNames),
+		Weights: make([]float64, len(scoutFeatureNames)), Epochs: 40, LearningRate: 0.01,
+	}
+	if fixedPriors {
+		for i, name := range model.FeatureNames {
+			model.Weights[i] = scoutPriorWeights[name]
+		}
+	}
+	return model
 }
 
 // RunScoutReport trains Scout and evaluates it with the baseline execution budget.
