@@ -126,6 +126,32 @@ Closed-loop feedback improves the weak zero-weight start.
 However, fixed priors alone still outperform the trained starts.
 Therefore, closed-loop Scout also does not pass the learned-versus-prior ablation criterion.
 
+## Training-only replacement experiment
+
+We tested one replacement without using the frozen held-out merchants.
+The candidate clamps every negative learned weight to zero.
+This constraint prevents a risk feature from lowering a schedule score.
+
+Run the candidate validation:
+
+```bash
+go run ./testkit/lab candidate-model
+```
+
+The command uses the 24 known-family transfer implementations as validation.
+These implementations are not held-out evidence after this experiment.
+
+| Ranker | Success@1 | Success@10 | Median rank | MRR | Pairwise accuracy |
+|---|---:|---:|---:|---:|---:|
+| Monotonic trained candidate | 91.7% | 100% | 1.0 | 0.938 | 0.985 |
+| Current batch-trained Scout | 91.7% | 100% | 1.0 | 0.938 | 0.994 |
+| Fixed priors only | 91.7% | 100% | 1.0 | 0.938 | 0.830 |
+| Zero weights | 0% | 58.3% | 3.5 | 0.208 | 0.500 |
+
+The candidate does not improve discovery rank.
+It also has lower pairwise accuracy than current batch Scout.
+Therefore, we rejected the candidate and kept the frozen model unchanged.
+
 ## Local inference measurement
 
 The measured host used an Intel Core Ultra 9 185H with 22 logical CPUs.

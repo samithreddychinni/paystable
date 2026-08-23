@@ -99,9 +99,13 @@ func RunModelEvidenceReport(budget int) (ModelEvidenceReport, error) {
 }
 
 func evaluateHeldOutModel(method string, model ScoutModel, budget int, closedLoop bool) (BaselineSummary, error) {
+	return evaluateImplementationModel(method, model, budget, heldoutCases(), closedLoop)
+}
+
+func evaluateImplementationModel(method string, model ScoutModel, budget int, cases []independentCase, closedLoop bool) (BaselineSummary, error) {
 	corpus := ProgramCorpus{Version: 1, MaxScheduleActions: 4}
 	var runs []BaselineRun
-	for _, testCase := range heldoutCases() {
+	for _, testCase := range cases {
 		candidates, err := enumerateIndependentCandidates(testCase, corpus.MaxScheduleActions)
 		if err != nil {
 			return BaselineSummary{}, err

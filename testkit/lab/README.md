@@ -94,6 +94,12 @@ go run ./testkit/lab model-evidence
 
 See [Scout model evidence](../../docs/scout-model.md) for the training contract and limitations.
 
+Validate the rejected monotonic candidate without using frozen held-out data:
+
+```bash
+go run ./testkit/lab candidate-model
+```
+
 ## Measure prior-free generalization
 
 Run held-out evaluation without fixed payment-risk priors:

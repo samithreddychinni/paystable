@@ -40,6 +40,9 @@ grep -q '"passed": true' "$check_dir/demo-one.json"
 go run ./testkit/lab model-evidence >"$check_dir/model-evidence.json"
 grep -q '"passed": true' "$check_dir/model-evidence.json"
 cmp "$check_dir/model-evidence.json" docs/evidence/model-evidence.json
+go run ./testkit/lab candidate-model >"$check_dir/candidate-model.json"
+grep -q '"promoted": false' "$check_dir/candidate-model.json"
+grep -q '"passed": true' "$check_dir/candidate-model.json"
 
 printf '%s\n' 'Check Compose files.'
 docker compose -f docker-compose.lab.yml config -q
