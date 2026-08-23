@@ -26,7 +26,7 @@ One row per merchant checkout attempt.
 |---|---|---|
 | `id` | `bigint identity primary key` | Internal only. |
 | `txn_id` | `text unique not null` | Merchant-supplied public transaction ID. |
-| `gateway` | `text not null` | Current adapter: `payu`. |
+| `gateway` | `text not null` | Supported values: `payu`, `razorpay`. |
 | `status` | `text not null default 'PENDING'` | `PENDING`, `VERIFYING`, `CONFIRMED`, `FAILED`, `REFUNDED`, `INDETERMINATE`, `MISMATCH`. |
 | `amount` | `bigint not null` | Smallest currency unit, e.g. paise. |
 | `currency` | `text not null default 'INR'` | ISO 4217. |

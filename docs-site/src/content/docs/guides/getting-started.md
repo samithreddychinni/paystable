@@ -33,12 +33,11 @@ Required environment variables:
 | Variable | Purpose |
 |---|---|
 | `DATABASE_URL` | PostgreSQL connection string. |
-| `GATEWAY` | Current adapter, normally `payu`. |
-| `WEBHOOK_SECRET` | Gateway webhook signing secret. For PayU this is the salt. |
-| `GATEWAY_API_KEY` | Gateway credential. For PayU this is the merchant key. |
-| `PAYU_STATUS_URL` | PayU status API endpoint. |
+| `GATEWAY` | Active gateway: `payu` or `razorpay`. |
 | `MERCHANT_CALLBACK_SECRET` | Secret used to sign callbacks to your app. |
 | `ADMIN_API_KEY` | Bearer token for hold creation and backend reads. |
+
+PayU requires `WEBHOOK_SECRET`, `GATEWAY_API_KEY`, and `PAYU_STATUS_URL`. Razorpay requires `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, and `RAZORPAY_WEBHOOK_SECRET`.
 
 Useful optional variables:
 
@@ -50,6 +49,7 @@ Useful optional variables:
 | `DELIVERY_TIMEOUT_S` | `10` | Merchant callback timeout. |
 | `DELIVERY_ALLOW_INSECURE_CALLBACK` | `false` | Allows `http://` callbacks in local dev only. |
 | `SECRET_ENCRYPTION_KEY` | empty | Required for encrypted webhook secret rotation. |
+| `RAZORPAY_API_BASE_URL` | `https://api.razorpay.com/v1` | Razorpay API endpoint. |
 
 ## Integration Flow
 

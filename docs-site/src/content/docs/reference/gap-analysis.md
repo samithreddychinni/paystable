@@ -7,11 +7,10 @@ Paystable has a useful niche, but it should not be oversold. This page tracks th
 
 ## Gateway Coverage
 
-Current adapter support is PayU-focused. That is enough to prove the model, but not enough for broad Indian merchant adoption.
+Current adapter support covers PayU and Razorpay. Razorpay has Test Mode evidence. This coverage is not enough for broad Indian merchant adoption.
 
 Needed:
 
-- Razorpay adapter
 - Cashfree adapter
 - PhonePe adapter
 - a cleaner connector test suite for gateway-specific signatures and status semantics

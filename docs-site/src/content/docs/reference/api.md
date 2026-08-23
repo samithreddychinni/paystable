@@ -109,7 +109,7 @@ Backend callers may omit `token` when using `Authorization: Bearer <ADMIN_API_KE
 POST /webhooks/{gateway}
 ```
 
-Current adapter: `payu`.
+Supported adapters: `payu` and `razorpay`.
 
 Paystable validates the gateway signature before writing to `webhooks`. Invalid requests are quarantined in `webhooks_rejected`.
 

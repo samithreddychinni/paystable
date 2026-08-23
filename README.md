@@ -10,7 +10,7 @@
 
 > a payment state stabilizer for teams that cannot afford to trust one webhook too early.
 
-Paystable is a small open-source Go service that sits after checkout and before fulfillment. It does not replace your payment gateway, route payments, vault cards, or compete with payment orchestrators. You keep using PayU today. Paystable gives your app a safer state machine around the messy part that happens after a customer pays: webhook delivery, gateway status lag, conflicting signals, callback retries, and audit trails.
+Paystable is a small open-source Go service that sits after checkout and before fulfillment. It does not replace your payment gateway, route payments, vault cards, or compete with payment orchestrators. You keep using your existing gateway. Paystable gives your app a safer state machine around the messy part that happens after a customer pays: webhook delivery, gateway status lag, conflicting signals, callback retries, and audit trails.
 
 The core rule is simple:
 
@@ -107,6 +107,20 @@ When a hold expires, Paystable does not fail it on the timer alone. It runs one 
 ### Outbox delivery
 
 Final states are delivered to your backend using signed HTTP callbacks. Delivery is at-least-once, so merchants must deduplicate with `X-Paystable-Idempotency-Key`.
+
+## verification evidence
+
+Run the deterministic demonstration:
+
+```bash
+go run ./testkit/lab demo
+```
+
+The current demonstration has 25 programs: 14 vulnerable programs and 11 correct controls. With a budget of 10 schedules per program, Scout finds all 14 known failures with a median rank of 1 and no findings in the correct controls. The same run reports these baseline success rates: bounded search 50%, random search 85.7%, and coverage-guided search 92.9%.
+
+The independent benchmark contains 24 repository-authored implementations. Scout finds all 12 vulnerable implementations within 10 schedules and reports no failures in the 12 correct implementations.
+
+These are deterministic, bounded laboratory results. They do not prove production accuracy. The repository also contains pinned third-party probes and one genuine Razorpay Test Mode webhook, but those checks are not part of the Scout performance report. See [Verification scope](docs/verification-scope.md) and [Submission demo](docs/submission-demo.md) for the evidence boundary and demo order.
 
 ---
 
@@ -264,12 +278,11 @@ Required:
 | Variable | Purpose |
 |---|---|
 | `DATABASE_URL` | PostgreSQL connection string. |
-| `GATEWAY` | Active gateway. Current adapter: `payu`. |
-| `WEBHOOK_SECRET` | Gateway webhook signing secret. For PayU this is the salt. |
-| `GATEWAY_API_KEY` | Gateway credential. For PayU this is the merchant key. |
-| `PAYU_STATUS_URL` | PayU status API endpoint. |
+| `GATEWAY` | Active gateway: `payu` or `razorpay`. |
 | `MERCHANT_CALLBACK_SECRET` | Secret used to sign callbacks to your app. |
 | `ADMIN_API_KEY` | Bearer token for hold creation and backend status reads. |
+
+PayU requires `WEBHOOK_SECRET`, `GATEWAY_API_KEY`, and `PAYU_STATUS_URL`. Razorpay requires `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, and `RAZORPAY_WEBHOOK_SECRET`.
 
 Optional:
 
@@ -283,6 +296,7 @@ Optional:
 | `DELIVERY_WORKER_CONCURRENCY` | `20` | Concurrent outbox deliveries. |
 | `DELIVERY_ALLOW_INSECURE_CALLBACK` | `false` | Allows `http://` callbacks for local development only. |
 | `SECRET_ENCRYPTION_KEY` | empty | Required for encrypted webhook secret rotation. |
+| `RAZORPAY_API_BASE_URL` | `https://api.razorpay.com/v1` | Razorpay API endpoint. |
 | `LOG_LEVEL` | `info` | Log level. |
 
 ---
@@ -309,6 +323,7 @@ Set `SECRET_ENCRYPTION_KEY` before using rotation. During the rotation window, P
 - [Lag estimator](docs/lag-estimator.md)
 - [Frontend UX guide](docs/frontend-ux.md)
 - [Learned verification scope and performance command](docs/verification-scope.md)
+- [Submission demonstration](docs/submission-demo.md)
 - [Testkit](testkit/README.md)
 
 ---

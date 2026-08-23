@@ -105,7 +105,7 @@ Terminal states are `CONFIRMED`, `FAILED`, `MISMATCH`, `INDETERMINATE`, and `REF
 
 ### Webhooks
 
-- PayU is the current production adapter.
+- PayU and Razorpay are supported adapters. Razorpay has Test Mode evidence.
 - Gateway webhook signatures must validate before insertion into the main `webhooks` table.
 - Rejected webhooks are stored in `webhooks_rejected`.
 - Duplicate gateway events are deduplicated with `(gateway, gateway_event_id)`.
@@ -183,7 +183,7 @@ Rules:
 
 | Gap | Impact |
 |---|---|
-| PayU-only adapter | Razorpay/Cashfree/PhonePe need real adapters before broad adoption. |
+| Limited gateway coverage | Cashfree and PhonePe need adapters before broad adoption. |
 | No official SDKs | Merchants must implement HMAC verification and idempotency themselves. |
 | Single-tenant config | Not suitable for hosting many merchants in one shared service. |
 | Dashboard auth is loopback-only | Good for local ops, not enough for public admin hosting. |
