@@ -321,6 +321,7 @@ Set `SECRET_ENCRYPTION_KEY` before using rotation. During the rotation window, P
 
 ## docs
 
+- [Guide for judges](docs/judges-guide.md)
 - [Product requirements](docs/prd.md)
 - [Database schema](docs/schema.md)
 - [Callback contract](docs/callback-contract.md)
