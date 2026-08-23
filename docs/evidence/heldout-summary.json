@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "evaluation": "frozen-complete-implementation-held-out",
+  "model_freeze_commit": "b245a558166accacfa13039ffeff2ce0425f5a24",
+  "heldout_set_commit": "cd1a75122ecbf38601e2e37fa220719988f11690",
+  "budget": 50,
+  "miss_rank": 51,
+  "random_seeds": {
+    "first": 7,
+    "last": 106,
+    "count": 100
+  },
+  "vulnerable_merchants": 4,
+  "correct_controls": 4,
+  "methods": [
+    {
+      "method": "bounded",
+      "success_at_3": 0.25,
+      "success_at_10": 0.5,
+      "success_at_25": 0.5,
+      "median_rank": 23.5,
+      "mean_reciprocal_rank": 0.15164728682170542
+    },
+    {
+      "method": "random",
+      "success_at_3": 0.555,
+      "success_at_10": 0.82,
+      "success_at_25": 0.9625,
+      "median_rank": 3,
+      "mean_reciprocal_rank": 0.5088410437031945,
+      "success_at_10_wilson_95": [0.7793624469518832, 0.8545496846741669]
+    },
+    {
+      "method": "coverage",
+      "success_at_3": 0.25,
+      "success_at_10": 0.5,
+      "success_at_25": 0.75,
+      "median_rank": 12.5,
+      "mean_reciprocal_rank": 0.16580261136712748
+    },
+    {
+      "method": "scout",
+      "success_at_3": 0.5,
+      "success_at_10": 0.75,
+      "success_at_25": 1,
+      "median_rank": 2.5,
+      "mean_reciprocal_rank": 0.5772058823529411
+    },
+    {
+      "method": "scout-closed-loop",
+      "success_at_3": 1,
+      "success_at_10": 1,
+      "success_at_25": 1,
+      "median_rank": 1.5,
+      "mean_reciprocal_rank": 0.75
+    }
+  ],
+  "false_findings": 0,
+  "deterministic_replay_rate": 1,
+  "evidence_limit": "Repository-authored merchants do not represent unseen production traffic."
+}

@@ -59,6 +59,8 @@ The external probe and genuine Test Mode evidence are described in [Verification
 - The 14-of-14 result is regression evidence, not held-out evidence.
 - The independent implementations are not third-party systems.
 - The independent benchmark tests known-family transfer. It is not the final held-out benchmark.
+- The frozen held-out set contains four vulnerable merchants and four correct controls.
+- Standard Scout has median rank 2.5. Closed-loop Scout finds all four failures within three schedules.
 - Two pinned third-party probes check narrow integration boundaries.
 - One genuine Razorpay Test Mode webhook is evidence of integration, not production load.
 - The published results do not guarantee accuracy on unseen production failures.

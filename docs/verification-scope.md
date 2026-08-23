@@ -183,6 +183,22 @@ Run it with this command after the set commit is published:
 go run ./testkit/lab heldout 50 7
 ```
 
+The first run used held-out set commit `cd1a75122ecbf38601e2e37fa220719988f11690`.
+It produced these frozen results:
+
+| Method | Success@3 | Success@10 | Success@25 | Median rank | MRR |
+|---|---:|---:|---:|---:|---:|
+| Bounded | 25.0% | 50.0% | 50.0% | 23.5 | 0.152 |
+| Random, 100 seeds | 55.5% | 82.0% | 96.3% | 3.0 | 0.509 |
+| Coverage-guided | 25.0% | 50.0% | 75.0% | 12.5 | 0.166 |
+| Scout | 50.0% | 75.0% | 100% | 2.5 | 0.577 |
+| Scout closed-loop | 100% | 100% | 100% | 1.5 | 0.750 |
+
+All four controls stayed clean, and every finding replayed.
+Standard Scout beat random on median rank and MRR, but not on `Success@10`.
+Closed-loop Scout found all four failures within three schedules.
+The set is small, so these results do not establish production accuracy.
+
 ## Stretch work
 
 The following work must not delay the required release:
