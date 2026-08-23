@@ -37,7 +37,7 @@ Admin API routes are loopback-only in the backend. Do not expose the dashboard d
 - Mismatches: webhook-vs-verified disagreements.
 - Deliveries: exhausted callback deliveries and replay action.
 - Config: local config visibility and secret rotation actions.
-- TestKit: local scenario helpers for development.
+- Verification: deterministic failure search, minimal traces, and baseline results.
 
 ## UX Direction
 

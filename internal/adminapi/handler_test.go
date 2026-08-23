@@ -25,6 +25,18 @@ func TestLocalhostOnly_AllowsLoopback(t *testing.T) {
 	}
 }
 
+func TestVerificationDemoRejectsExternalRequest(t *testing.T) {
+	mux := http.NewServeMux()
+	New(nil, nil).Register(mux)
+	req := httptest.NewRequest("POST", "/api/v1/admin/verification/demo", nil)
+	req.RemoteAddr = "203.0.113.5:5050"
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", w.Code)
+	}
+}
+
 func TestLocalhostOnly_RejectsExternal(t *testing.T) {
 	h := localhostOnly(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)

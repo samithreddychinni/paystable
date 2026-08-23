@@ -77,4 +77,5 @@ export const api = {
   getRotationStatus:    ()      => get('/config/rotation-status'),
   rotateSecret:         (body)  => post('/config/rotate-secret', body),
   updateConfig:         (body)  => post('/config', body),
+  runVerificationDemo:  ()      => post('/verification/demo'),
 }

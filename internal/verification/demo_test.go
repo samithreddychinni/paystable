@@ -23,4 +23,7 @@ func TestDemoIsDeterministicAndComplete(t *testing.T) {
 	if first.RepairCheckedSchedules == 0 || first.RepairRemainingFailures != 0 || first.ScoutModelBytes == 0 {
 		t.Fatalf("demo evidence is incomplete: %#v", first)
 	}
+	if first.FeaturedFinding == nil || len(first.FeaturedFinding.Result.Violations) != 1 || first.FeaturedFinding.Reduction.ReducedActionCount != 3 {
+		t.Fatalf("featured finding is incomplete: %#v", first.FeaturedFinding)
+	}
 }

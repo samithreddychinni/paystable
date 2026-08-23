@@ -36,6 +36,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.Handle("POST /api/v1/admin/config", g(http.HandlerFunc(h.updateConfig)))
 	mux.Handle("GET /api/v1/admin/config/rotation-status", g(http.HandlerFunc(h.rotationStatus)))
 	mux.Handle("POST /api/v1/admin/config/rotate-secret", g(http.HandlerFunc(h.rotateSecret)))
+	mux.Handle("POST /api/v1/admin/verification/demo", g(http.HandlerFunc(h.verificationDemo)))
 	mux.Handle("GET /api/v1/admin/export/ledger", g(http.HandlerFunc(h.ExportLedger)))
 	mux.HandleFunc("GET /api/v1/transactions/{id}/timeline", h.PublicTimeline)
 }

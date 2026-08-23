@@ -18,10 +18,17 @@ type DemoReport struct {
 	RazorpaySignature       DemoSignature     `json:"razorpay_signature"`
 	Programs                []DemoProgram     `json:"programs"`
 	Search                  []BaselineSummary `json:"search"`
+	FeaturedFinding         *DemoFinding      `json:"featured_finding"`
 	ScoutModelBytes         int               `json:"scout_model_bytes"`
 	RepairCheckedSchedules  int               `json:"repair_checked_schedules"`
 	RepairRemainingFailures int               `json:"repair_remaining_failures"`
 	Passed                  bool              `json:"passed"`
+}
+
+type DemoFinding struct {
+	Schedule  Schedule        `json:"schedule"`
+	Result    Result          `json:"result"`
+	Reduction ReductionReport `json:"reduction"`
 }
 
 type DemoSignature struct {
@@ -89,11 +96,18 @@ func RunDemo() (DemoReport, error) {
 			return DemoReport{}, fmt.Errorf("program %s did not replay deterministically", program.Program)
 		}
 		if program.ExpectedInvariant != "" {
-			reduced, _, err := Reduce(program.GroundTruth, program.ExpectedInvariant, Run)
+			reduced, reduction, err := Reduce(program.GroundTruth, program.ExpectedInvariant, Run)
 			if err != nil {
 				return DemoReport{}, err
 			}
 			programReport.ReducedActions = len(reduced.Actions)
+			if program.Program == ProgramFulfillBeforeDedup {
+				result, err := Run(reduced)
+				if err != nil {
+					return DemoReport{}, err
+				}
+				report.FeaturedFinding = &DemoFinding{Schedule: reduced, Result: result, Reduction: reduction}
+			}
 		}
 		report.Programs = append(report.Programs, programReport)
 	}

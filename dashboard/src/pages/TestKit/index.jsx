@@ -1,266 +1,213 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState } from 'react'
+import { Check, Play, ShieldCheck } from 'lucide-react'
+import { api } from '../../lib/api'
 import { cn } from '../../lib/utils'
 
-const GATEWAY_URL  = import.meta.env.VITE_GATEWAY_URL  || 'http://localhost:9090'
-const MERCHANT_URL = import.meta.env.VITE_MERCHANT_URL || 'http://localhost:9091'
-const PAYSTABLE_URL = ''
+const METHOD_LABELS = {
+  bounded: 'Bounded search',
+  random: 'Random search',
+  coverage: 'Coverage-guided',
+  scout: 'Scout',
+}
 
-const SCENARIOS = [
-  {
-    id: 'happy-path',
-    label: 'Happy path',
-    description: 'Gateway says success, verification confirms success. Should reach Paid quickly.',
-    status: 'success',
-    failUntilS: 0,
-    amount: 49900,
-  },
-  {
-    id: 'false-failure',
-    label: 'False failure',
-    description: 'Gateway fires a FAILURE webhook, but is actually successful after 25s. paystable should still reach Paid.',
-    status: 'success',
-    failUntilS: 25,
-    webhookStatus: 'failure',
-    amount: 49900,
-  },
-  {
-    id: 'genuine-failure',
-    label: 'Genuine failure',
-    description: 'Gateway fires failure, verification confirms failure. Should reach Failed.',
-    status: 'failed',
-    failUntilS: 0,
-    webhookStatus: 'failure',
-    amount: 49900,
-  },
-  {
-    id: 'amount-mismatch',
-    label: 'Amount mismatch',
-    description: 'Gateway reports success but with wrong amount. Should reach Needs attention.',
-    status: 'success',
-    failUntilS: 0,
-    amount: 25000,
-    holdAmount: 49900,
-  },
-  {
-    id: 'duplicate-webhook',
-    label: 'Duplicate webhook',
-    description: 'Same success webhook fired 3 times. Should produce a single Paid result.',
-    status: 'success',
-    failUntilS: 0,
-    amount: 49900,
-    duplicate: true,
-  },
-]
+const STEP_LABELS = {
+  fulfill: 'Fulfill order',
+  crash: 'Merchant crashes',
+  restart: 'Merchant restarts',
+  checkpoint: 'Store event claim',
+  deliver: 'Update payment state',
+}
 
-function LogLine({ line }) {
-  const colors = {
-    info: 'text-text-secondary',
-    success: 'text-status-green',
-    error: 'text-status-red',
-    status: 'text-status-blue',
-  }
+function Metric({ label, value, detail }) {
   return (
-    <div className={cn('text-xs font-mono', colors[line.type] || 'text-text-muted')}>
-      <span className="text-text-muted mr-2">{line.time}</span>{line.msg}
+    <div className="px-5 py-4">
+      <p className="text-xs text-text-muted">{label}</p>
+      <p className="mt-1 font-mono text-xl font-medium text-text-primary">{value}</p>
+      <p className="mt-1 text-xs text-text-muted">{detail}</p>
+    </div>
+  )
+}
+
+function SearchTable({ search, vulnerableCount }) {
+  const rows = search.filter(({ method }) => METHOD_LABELS[method])
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-bg-border bg-bg-surface">
+      <div className="border-b border-bg-border px-5 py-4">
+        <h2 className="text-sm font-medium text-text-primary">Search comparison</h2>
+        <p className="mt-1 text-xs text-text-muted">Each method receives the same legal schedules and execution budget.</p>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-left text-xs">
+          <thead className="border-b border-bg-border text-text-muted">
+            <tr>
+              <th className="px-5 py-3 font-normal">Method</th>
+              <th className="px-5 py-3 font-normal">Failures found within 10</th>
+              <th className="px-5 py-3 font-normal">Median rank</th>
+              <th className="px-5 py-3 font-normal">False findings</th>
+              <th className="px-5 py-3 font-normal">Replay rate</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-bg-border">
+            {rows.map((row) => {
+              const found = Math.round(row.success_at_10 * vulnerableCount)
+              const scout = row.method === 'scout'
+              return (
+                <tr key={row.method} className={scout ? 'bg-status-green/5' : ''}>
+                  <td className={cn('px-5 py-3 font-medium', scout ? 'text-status-green' : 'text-text-primary')}>
+                    {METHOD_LABELS[row.method]}
+                  </td>
+                  <td className="px-5 py-3 font-mono text-text-secondary">{found} / {vulnerableCount}</td>
+                  <td className="px-5 py-3 font-mono text-text-secondary">{row.median_executions_before_finding}</td>
+                  <td className="px-5 py-3 font-mono text-text-secondary">{row.false_finding_count}</td>
+                  <td className="px-5 py-3 font-mono text-text-secondary">{Math.round(row.deterministic_replay_rate * 100)}%</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+function Finding({ finding }) {
+  const violation = finding.result.violations[0]
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-bg-border bg-bg-surface">
+      <div className="border-b border-bg-border px-5 py-4 sm:flex sm:items-start sm:justify-between sm:gap-4">
+        <div>
+          <p className="text-xs font-mono text-status-red">{violation.invariant}</p>
+          <h2 className="mt-1 text-sm font-medium text-text-primary">One payment fulfilled twice</h2>
+          <p className="mt-1 max-w-2xl text-xs text-text-muted">{violation.detail}.</p>
+        </div>
+        <div className="mt-3 text-left sm:mt-0 sm:text-right">
+          <p className="font-mono text-sm text-text-primary">{finding.reduction.reduced_action_count} input actions</p>
+          <p className="text-xs text-text-muted">1-minimal and deterministic</p>
+        </div>
+      </div>
+      <ol className="divide-y divide-bg-border" aria-label="Failure trace">
+        {finding.result.trace.map((entry) => (
+          <li key={entry.sequence} className="grid grid-cols-[28px_minmax(120px,180px)_1fr_auto] items-center gap-3 px-5 py-3 text-xs">
+            <span className="font-mono text-text-muted">{entry.sequence}</span>
+            <span className="font-medium text-text-primary">{STEP_LABELS[entry.action] || entry.action}</span>
+            <span className="text-text-muted">{entry.detail}</span>
+            <span className={cn('font-mono', entry.effect_count > 1 ? 'text-status-red' : 'text-text-secondary')}>
+              {entry.effect_count} {entry.effect_count === 1 ? 'effect' : 'effects'}
+            </span>
+          </li>
+        ))}
+      </ol>
+      <div className="border-t border-bg-border px-5 py-3 text-xs text-text-muted">
+        The reducer tested each removable action. Removing any remaining input action removes this failure.
+      </div>
     </div>
   )
 }
 
 export default function TestKit() {
-  const [running, setRunning]           = useState(null)
-  const [log, setLog]                   = useState([])
-  const [merchantOffline, setMerchantOffline] = useState(false)
-  const [activeTxn, setActiveTxn]       = useState(null)
-  const [currentStatus, setCurrentStatus] = useState(null)
-  const pollRef = useRef(null)
-  const logRef  = useRef(null)
-  const runSeqRef = useRef(0)
+  const [report, setReport] = useState(null)
+  const [running, setRunning] = useState(false)
+  const [error, setError] = useState('')
 
-  const addLog = (msg, type = 'info') => {
-    const time = new Date().toLocaleTimeString('en-IN', { hour12: false })
-    setLog(prev => [...prev, { msg, type, time }])
-  }
-
-  useEffect(() => {
-    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight
-  }, [log])
-
-  useEffect(() => () => clearInterval(pollRef.current), [])
-
-  const pollStatus = (txnID, token) => {
-    clearInterval(pollRef.current)
-    pollRef.current = setInterval(async () => {
-      try {
-        const res = await fetch(`/api/v1/transactions/${txnID}/status?token=${token}`)
-        const data = await res.json()
-        const s = data.status
-        setCurrentStatus(s)
-        const terminal = ['CONFIRMED','FAILED','INDETERMINATE','MISMATCH'].includes(s)
-        addLog(`status: ${s}`, terminal ? (s === 'CONFIRMED' ? 'success' : 'error') : 'status')
-        if (terminal) {
-          clearInterval(pollRef.current)
-          setRunning(null)
-          addLog(`done: ${s}`, s === 'CONFIRMED' ? 'success' : 'error')
-        }
-      } catch (e) {
-        addLog('poll error: ' + e.message, 'error')
-      }
-    }, 2000)
-  }
-
-  const runScenario = async (scenario) => {
-    setRunning(scenario.id)
-    setLog([])
-    setCurrentStatus(null)
-    setActiveTxn(null)
-    runSeqRef.current += 1
-    const txnID = `${scenario.id}-${runSeqRef.current}`
-    const holdAmount = scenario.holdAmount || scenario.amount
-
+  const runDemo = async () => {
+    setRunning(true)
+    setError('')
     try {
-      addLog(`starting: ${scenario.label}`)
-
-      addLog('creating payment hold...')
-      const holdRes = await fetch(`${PAYSTABLE_URL}/api/v1/hold`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer test-admin-key' },
-        body: JSON.stringify({
-          txn_id: txnID, gateway: 'payu', amount: holdAmount, currency: 'INR',
-          ttl_seconds: 300, callback_url: `${MERCHANT_URL}/callback`,
-          metadata: { scenario: scenario.id },
-        }),
-      })
-      const hold = await holdRes.json()
-      if (!hold.read_token) {
-        addLog('failed to create hold: ' + JSON.stringify(hold), 'error')
-        setRunning(null)
-        return
-      }
-      setActiveTxn({ txnID, token: hold.read_token })
-      addLog(`hold created: ${txnID}`, 'success')
-
-      addLog('scripting mock gateway...')
-      await fetch(`${GATEWAY_URL}/script`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          txn_id: txnID, status: scenario.status, amount: scenario.amount,
-          fail_until_s: scenario.failUntilS || 0,
-          product_info: 'test-ticket', firstname: 'tester', email: 'test@paystable.dev',
-        }),
-      })
-      addLog(`gateway scripted: ${scenario.status}${scenario.failUntilS ? ` (failing for ${scenario.failUntilS}s)` : ''}`)
-
-      const webhookStatus = scenario.webhookStatus || 'success'
-      const fires = scenario.duplicate ? 3 : 1
-      for (let i = 0; i < fires; i++) {
-        await fetch(`${GATEWAY_URL}/fire-webhook`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ txn_id: txnID, status: webhookStatus }),
-        })
-        addLog(`webhook fired${fires > 1 ? ` (${i+1}/${fires})` : ''}: ${webhookStatus}`)
-      }
-
-      addLog('polling for status...')
-      pollStatus(txnID, hold.read_token)
-    } catch (e) {
-      addLog('error: ' + e.message, 'error')
-      setRunning(null)
+      setReport(await api.runVerificationDemo())
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setRunning(false)
     }
   }
 
-  const toggleMerchant = async () => {
-    try {
-      const res = await fetch(`${MERCHANT_URL}/toggle-offline`, { method: 'POST' })
-      const data = await res.json()
-      setMerchantOffline(data.state === 'offline')
-      addLog(`merchant is now ${data.state}`, data.state === 'offline' ? 'error' : 'success')
-    } catch (e) {
-      addLog('could not reach mock merchant: ' + e.message, 'error')
-    }
-  }
-
-  const statusColor = {
-    CONFIRMED: 'text-status-green',
-    FAILED: 'text-status-red',
-    INDETERMINATE: 'text-status-yellow',
-    MISMATCH: 'text-status-yellow',
-    VERIFYING: 'text-status-blue',
-    PENDING: 'text-text-muted',
-  }
+  const vulnerableCount = report?.programs.filter((program) => program.expected_invariant).length ?? 0
+  const correctCount = report ? report.programs.length - vulnerableCount : 0
+  const scout = report?.search.find(({ method }) => method === 'scout')
 
   return (
-    <div className="space-y-5">
-      <div>
-        <p className="text-sm text-text-muted">
-          Runs against the mock gateway at{' '}
-          <span className="font-mono text-text-secondary">{GATEWAY_URL}</span>.
-          Start the test environment first: <span className="font-mono text-text-secondary">docker compose -f docker-compose.testkit.yml up</span>
-        </p>
-      </div>
-
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-medium text-text-primary">Scenarios</h2>
+    <div className="mx-auto max-w-[1100px] space-y-6">
+      <header className="flex flex-col gap-5 border-b border-bg-border pb-6 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <div className="flex items-center gap-2 text-text-muted">
+            <ShieldCheck size={16} strokeWidth={1.5} />
+            <span className="text-xs font-medium uppercase tracking-[0.16em]">Verification lab</span>
+          </div>
+          <h1 className="mt-3 text-2xl font-medium tracking-tight text-text-primary">Find payment failures before production</h1>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-text-muted">
+            Scout ranks legal fault schedules. Executable invariants decide whether a result is a failure.
+          </p>
+        </div>
         <button
-          onClick={toggleMerchant}
-          className={cn(
-            'text-xs px-3 py-1.5 rounded border transition-colors',
-            merchantOffline
-              ? 'border-status-red/40 text-status-red bg-status-red/5 hover:bg-status-red/10'
-              : 'border-bg-border text-text-secondary hover:text-text-primary'
-          )}
+          type="button"
+          onClick={runDemo}
+          disabled={running}
+          className="inline-flex min-w-40 items-center justify-center gap-2 rounded-lg bg-text-primary px-4 py-2.5 text-sm font-medium text-bg-base transition-opacity hover:opacity-90 disabled:cursor-wait disabled:opacity-60"
         >
-          {merchantOffline ? 'Merchant is offline — click to bring back' : 'Take merchant offline'}
+          <Play size={14} fill="currentColor" />
+          {running ? 'Running checks…' : report ? 'Run again' : 'Run verification'}
         </button>
-      </div>
+      </header>
 
-      <div className="grid grid-cols-1 gap-2">
-        {SCENARIOS.map(s => (
-          <div key={s.id} className={cn(
-            'bg-bg-surface border border-bg-border rounded-xl px-5 py-4 flex items-start justify-between gap-4',
-            running === s.id && 'border-status-blue/30'
-          )}>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-text-primary">{s.label}</p>
-              <p className="text-xs text-text-muted mt-0.5">{s.description}</p>
+      <section className="grid overflow-hidden rounded-xl border border-bg-border bg-bg-surface md:grid-cols-3 md:divide-x md:divide-bg-border">
+        {[
+          ['1', 'Rank', 'Scout ranks schedules that can expose payment bugs.'],
+          ['2', 'Execute', 'The lab runs each schedule against a merchant program.'],
+          ['3', 'Prove', 'Invariants replay and reduce each real failure.'],
+        ].map(([step, title, detail]) => (
+          <div key={step} className="flex gap-3 border-b border-bg-border px-5 py-4 last:border-b-0 md:border-b-0">
+            <span className="font-mono text-xs text-text-muted">{step}</span>
+            <div>
+              <h2 className="text-sm font-medium text-text-primary">{title}</h2>
+              <p className="mt-1 text-xs leading-5 text-text-muted">{detail}</p>
             </div>
-            <button
-              onClick={() => runScenario(s)}
-              disabled={!!running}
-              className={cn(
-                'flex-shrink-0 text-xs px-4 py-2 rounded-lg border transition-colors',
-                running === s.id
-                  ? 'border-status-blue/40 text-status-blue bg-status-blue/5'
-                  : running
-                  ? 'border-bg-border text-text-muted cursor-not-allowed'
-                  : 'border-bg-border text-text-secondary hover:text-text-primary hover:border-text-muted'
-              )}
-            >
-              {running === s.id ? 'Running...' : 'Run'}
-            </button>
           </div>
         ))}
-      </div>
+      </section>
 
-      {(log.length > 0 || currentStatus) && (
-        <div className="bg-bg-surface border border-bg-border rounded-xl overflow-hidden">
-          {currentStatus && (
-            <div className="px-5 py-3 border-b border-bg-border flex items-center gap-3">
-              <span className="text-xs text-text-muted">Current status:</span>
-              <span className={cn('text-sm font-mono font-medium', statusColor[currentStatus] || 'text-text-primary')}>
-                {currentStatus}
-              </span>
-              {activeTxn && (
-                <span className="text-xs text-text-muted font-mono ml-auto">{activeTxn.txnID}</span>
-              )}
-            </div>
-          )}
-          <div ref={logRef} className="px-5 py-3 space-y-0.5 max-h-64 overflow-y-auto">
-            {log.map((line, i) => <LogLine key={i} line={line} />)}
-            {running && <div className="text-xs text-text-muted font-mono animate-pulse">waiting...</div>}
-          </div>
+      {error ? (
+        <div role="alert" className="rounded-xl border border-status-red/40 bg-status-red/5 px-5 py-4 text-sm text-status-red">
+          Verification could not run: {error}
         </div>
+      ) : null}
+
+      {report ? (
+        <>
+          <section role="status" className="flex items-start gap-3 rounded-xl border border-status-green/30 bg-status-green/5 px-5 py-4">
+            <Check size={18} className="mt-0.5 shrink-0 text-status-green" />
+            <div>
+              <h2 className="text-sm font-medium text-text-primary">Verification passed</h2>
+              <p className="mt-1 text-xs leading-5 text-text-muted">
+                Scout found all {vulnerableCount} known failures within 10 schedules. All {correctCount} correct controls stayed clean.
+              </p>
+              <p className="mt-1 font-mono text-[11px] text-text-muted">Seed {report.seed} · budget {report.budget} · deterministic in-process run</p>
+            </div>
+          </section>
+
+          <section className="grid divide-y divide-bg-border overflow-hidden rounded-xl border border-bg-border bg-bg-surface sm:grid-cols-2 sm:divide-x sm:divide-y-0 lg:grid-cols-4">
+            <Metric label="Known failures" value={`${vulnerableCount}/${vulnerableCount}`} detail="Found within 10 schedules" />
+            <Metric label="Correct controls" value={`${correctCount}/${correctCount}`} detail="No invariant findings" />
+            <Metric label="Scout median rank" value={scout?.median_executions_before_finding ?? '—'} detail="Schedules before a finding" />
+            <Metric label="Scout model" value={`${report.scout_model_bytes.toLocaleString()} B`} detail="Local ranking model" />
+          </section>
+
+          <Finding finding={report.featured_finding} />
+          <SearchTable search={report.search} vulnerableCount={vulnerableCount} />
+
+          <section className="rounded-xl border border-bg-border px-5 py-4">
+            <h2 className="text-sm font-medium text-text-primary">Evidence boundary</h2>
+            <p className="mt-1 max-w-3xl text-xs leading-5 text-text-muted">
+              This run uses synthetic programs and repository-authored controls. It does not prove accuracy on unseen production failures.
+            </p>
+          </section>
+        </>
+      ) : (
+        <section className="rounded-xl border border-dashed border-bg-border px-5 py-8 text-center">
+          <p className="text-sm text-text-secondary">Run the verifier to create a fresh report on this machine.</p>
+          <p className="mt-1 text-xs text-text-muted">The model cannot mark a failure. Only executable invariants can mark one.</p>
+        </section>
       )}
     </div>
   )

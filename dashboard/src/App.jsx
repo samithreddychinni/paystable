@@ -5,6 +5,7 @@ import Health from './pages/Health'
 import Transactions from './pages/Transactions'
 import Mismatches from './pages/Mismatches'
 import Config from './pages/Config'
+import TestKit from './pages/TestKit'
 
 export default function App() {
   return (
@@ -17,6 +18,7 @@ export default function App() {
           <Route path="/transactions" element={<Transactions />} />
           <Route path="/mismatches" element={<Mismatches />} />
           <Route path="/config" element={<Config />} />
+          <Route path="/verification" element={<TestKit />} />
         </Routes>
       </Shell>
     </BrowserRouter>

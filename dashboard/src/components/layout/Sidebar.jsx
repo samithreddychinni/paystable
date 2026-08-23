@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { Activity, ArrowLeftRight, Zap, LayoutDashboard, Settings } from 'lucide-react'
+import { Activity, ArrowLeftRight, Zap, LayoutDashboard, Settings, ShieldCheck } from 'lucide-react'
 import { cn } from '../../lib/utils'
 
 const navItems = [
@@ -7,6 +7,7 @@ const navItems = [
   { to: '/health',       label: 'Health',        icon: Activity },
   { to: '/transactions', label: 'Transactions',  icon: ArrowLeftRight },
   { to: '/mismatches',   label: 'Mismatches',    icon: Zap },
+  { to: '/verification', label: 'Verification',  icon: ShieldCheck },
   { to: '/config',       label: 'Config',        icon: Settings },
 ]
 

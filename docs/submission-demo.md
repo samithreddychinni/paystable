@@ -18,21 +18,32 @@ Paystable protects the payment state and callback path. Scout ranks legal fault 
 
 ## Three-minute order
 
-1. Run the complete deterministic demonstration:
+1. Start Paystable on localhost.
+2. Open the verification page:
 
-   ```bash
-   go run ./testkit/lab demo
+   ```text
+   http://localhost:8080/dashboard/verification
    ```
 
-2. Show the program counts, search results, reduced failure traces, replay result, and repair check.
-3. Run the independent implementation benchmark:
+3. Select **Run verification**.
+4. Explain the three trust steps: Scout ranks, the lab executes, and invariants prove.
+5. Show the duplicate-fulfillment trace and its 1-minimal schedule.
+6. Compare Scout with bounded, random, and coverage-guided search.
+7. Read the evidence boundary before you finish.
 
-   ```bash
-   go run ./testkit/lab independent 50 7
-   ```
+Use the raw command after the visual demonstration when a reviewer wants the complete report:
 
-4. Explain the trust boundary: Scout selects schedules, but executable invariants label failures.
-5. Show the external probe and genuine Test Mode evidence described in [Verification scope](verification-scope.md).
+```bash
+go run ./testkit/lab demo
+```
+
+Run the independent implementation benchmark as a separate evidence check:
+
+```bash
+go run ./testkit/lab independent 50 7
+```
+
+The external probe and genuine Test Mode evidence are described in [Verification scope](verification-scope.md).
 
 ## Claims that the evidence supports
 
