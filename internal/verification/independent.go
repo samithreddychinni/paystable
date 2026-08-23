@@ -72,6 +72,15 @@ type independentState struct {
 
 // RunIndependentReport evaluates Scout against merchant code outside the training simulator.
 func RunIndependentReport(training ProgramCorpus, budget int, seed int64) (IndependentReport, error) {
+	return runImplementationReport(
+		training, budget, seed,
+		"implementation-held-out-known-family-transfer",
+		"repository-authored-known-family-transfer",
+		independentCases(),
+	)
+}
+
+func runImplementationReport(training ProgramCorpus, budget int, seed int64, evaluation, evaluationSet string, cases []independentCase) (IndependentReport, error) {
 	if budget < 50 || budget > 1000 {
 		return IndependentReport{}, fmt.Errorf("budget must be between 50 and 1000")
 	}
@@ -84,8 +93,8 @@ func RunIndependentReport(training ProgramCorpus, budget int, seed int64) (Indep
 		return IndependentReport{}, err
 	}
 	report := IndependentReport{
-		Version: 9, Evaluation: "implementation-held-out-known-family-transfer",
-		TrainingSet: "synthetic-regression-corpus", EvaluationSet: "repository-authored-known-family-transfer",
+		Version: 9, Evaluation: evaluation,
+		TrainingSet: "synthetic-regression-corpus", EvaluationSet: evaluationSet,
 		SplitUnit: "complete-implementation", FixedPriors: true,
 		Budget: budget, MissRank: budget + 1, Seed: seed,
 		ScoutModelBytes: len(modelJSON), ScoutParameters: len(model.Weights),
@@ -93,7 +102,6 @@ func RunIndependentReport(training ProgramCorpus, budget int, seed int64) (Indep
 	for offset := int64(0); offset < 100; offset++ {
 		report.RandomSeeds = append(report.RandomSeeds, seed+offset)
 	}
-	cases := independentCases()
 	corpus := ProgramCorpus{Version: training.Version, MaxScheduleActions: 4}
 	var randomTrials []BaselineRun
 	for i, testCase := range cases {

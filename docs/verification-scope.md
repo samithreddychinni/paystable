@@ -176,6 +176,13 @@ The final held-out benchmark uses these rules:
 If a held-out result changes Scout, move that implementation to regression.
 Create a replacement implementation before the next held-out evaluation.
 
+The frozen set contains four vulnerable merchants and four correct controls.
+Run it with this command after the set commit is published:
+
+```bash
+go run ./testkit/lab heldout 50 7
+```
+
 ## Stretch work
 
 The following work must not delay the required release:

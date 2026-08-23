@@ -159,6 +159,18 @@ Run the optional [external implementation checks](../external/README.md) separat
 The external results are not part of the Scout performance report.
 Run `go run ./testkit/lab external-transfer` after that check.
 
+## Run the frozen held-out benchmark
+
+Run the post-freeze merchant set with the frozen budget and random seeds:
+
+```bash
+go run ./testkit/lab heldout 50 7
+```
+
+The set contains four vulnerable merchants and four correct controls.
+The split unit is a complete merchant implementation.
+No held-out code or result can change Scout features, priors, or thresholds.
+
 ## Verify the constrained repair
 
 Verify the terminal-state repair after the Scout search gate passes:
