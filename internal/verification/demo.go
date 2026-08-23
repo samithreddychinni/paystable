@@ -20,6 +20,7 @@ type DemoReport struct {
 	Search                  []BaselineSummary       `json:"search"`
 	HeldOut                 IndependentReport       `json:"held_out"`
 	InvariantContracts      InvariantContractReport `json:"invariant_contracts"`
+	CrossAdapter            CrossAdapterReport      `json:"cross_adapter"`
 	FeaturedFinding         *DemoFinding            `json:"featured_finding"`
 	ScoutModelBytes         int                     `json:"scout_model_bytes"`
 	ScoutParameterCount     int                     `json:"scout_parameter_count"`
@@ -147,6 +148,11 @@ func RunDemo() (DemoReport, error) {
 		return DemoReport{}, err
 	}
 	report.InvariantContracts = contracts
+	crossAdapter, err := RunCrossAdapterReport()
+	if err != nil {
+		return DemoReport{}, err
+	}
+	report.CrossAdapter = crossAdapter
 	repair, err := VerifyTerminalStateRepair(corpus)
 	if err != nil {
 		return DemoReport{}, err

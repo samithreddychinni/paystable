@@ -171,6 +171,7 @@ export default function TestKit() {
   const heldOutVulnerable = report?.held_out.cases.filter((program) => program.expected_invariant).length ?? 0
   const heldOutCorrect = report ? report.held_out.cases.length - heldOutVulnerable : 0
   const heldOutClosed = report?.held_out.summary.find(({ method }) => method === 'scout-closed-loop')
+  const crossAdapterCases = report?.cross_adapter.cases.length ?? 0
 
   return (
     <div className="mx-auto max-w-[1100px] space-y-6">
@@ -250,6 +251,9 @@ export default function TestKit() {
             <h2 className="text-sm font-medium text-text-primary">Evidence boundary</h2>
             <p className="mt-1 max-w-3xl text-xs leading-5 text-text-muted">
               This run uses repository-authored merchants and synthetic regression programs. It does not establish accuracy on unseen production failures.
+            </p>
+            <p className="mt-1 max-w-3xl text-xs leading-5 text-text-muted">
+              Razorpay and PayU produced the same normalized results for all {crossAdapterCases} cross-adapter schedules.
             </p>
           </section>
         </>

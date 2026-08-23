@@ -30,7 +30,8 @@ Paystable protects the payment state and callback path. Scout ranks legal fault 
 5. Show the frozen held-out comparison.
 6. State that standard Scout does not beat random on `Success@10`.
 7. Show the duplicate-fulfillment trace and its 1-minimal schedule.
-8. Read the evidence boundary before you finish.
+8. Show the Razorpay and PayU cross-adapter control.
+9. Read the evidence boundary before you finish.
 
 Use the raw command after the visual demonstration when a reviewer wants the complete report:
 
@@ -52,6 +53,7 @@ The external probe and genuine Test Mode evidence are described in [Verification
 - Scout ranks all 14 known vulnerable regression programs within 10 schedules.
 - Correct controls produce no invariant findings in the published runs.
 - Failure traces replay deterministically and reduce to a 1-minimal schedule.
+- Razorpay and PayU produce the same normalized results in the cross-adapter control.
 - The release gate checks application, PostgreSQL, webhook, callback, and network-failure paths.
 
 ## Limits

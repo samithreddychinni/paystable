@@ -27,6 +27,17 @@ go run ./testkit/lab invariants
 
 See [Executable invariant contracts](../../docs/invariants.md) for the contract boundaries.
 
+## Run the cross-adapter control
+
+Run equivalent duplicate, reorder, and terminal-regression schedules:
+
+```bash
+go run ./testkit/lab cross-adapter
+```
+
+The command maps Razorpay and PayU states to the same action grammar.
+Both paths use the same executor, invariant checker, and replay path.
+
 ## Compile the payment-behavior graph
 
 Compile a program graph with a maximum schedule length:
@@ -200,8 +211,8 @@ Run the deterministic verification story:
 go run ./testkit/lab demo
 ```
 
-The command checks Razorpay signature handling, replay, reduction, search,
-runtime feedback, and repair. It does not call Razorpay or use real money.
+The command checks signature handling, adapters, replay, reduction, search,
+runtime feedback, and repair. It does not call a gateway or use real money.
 
 ## Run the release checks
 

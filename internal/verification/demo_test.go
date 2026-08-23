@@ -32,4 +32,7 @@ func TestDemoIsDeterministicAndComplete(t *testing.T) {
 	if !first.InvariantContracts.Passed || len(first.InvariantContracts.Contracts) != 5 {
 		t.Fatalf("invariant contracts are incomplete: %#v", first.InvariantContracts)
 	}
+	if !first.CrossAdapter.Passed || len(first.CrossAdapter.Cases) != 3 {
+		t.Fatalf("cross-adapter control is incomplete: %#v", first.CrossAdapter)
+	}
 }

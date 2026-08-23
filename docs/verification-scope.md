@@ -210,7 +210,7 @@ The following work must not delay the required release:
 - a model with millions of parameters
 - hosted execution
 - languages other than Go
-- gateways other than Razorpay
+- new production gateways beyond the existing PayU control
 - payment products outside the payment-to-fulfillment path.
 
 ## Implementation order
