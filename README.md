@@ -2,10 +2,6 @@
 
 > a payment state stabilizer for teams that cannot afford to trust one webhook too early.
 
-> [!NOTE]
-> Most of this code was drafted with AI and thoroughly reviewed and tested by people.
-> If you find a bug, please open an issue. We prefer issue reports to production surprises.
-
 Paystable is a small open-source Go service that sits after checkout and before fulfillment. It does not replace your payment gateway, route payments, vault cards, or compete with payment orchestrators. You keep using your existing gateway. Paystable gives your app a safer state machine around the messy part that happens after a customer pays: webhook delivery, gateway status lag, conflicting signals, callback retries, and audit trails.
 
 The core rule is simple:
