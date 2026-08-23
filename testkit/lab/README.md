@@ -17,6 +17,16 @@ The invariant checks decide if the schedule found a bug.
 
 Run the same file again to verify deterministic replay.
 
+## Check the five PRD invariants
+
+Run one passing and one failing fixture for each invariant:
+
+```bash
+go run ./testkit/lab invariants
+```
+
+See [Executable invariant contracts](../../docs/invariants.md) for the contract boundaries.
+
 ## Compile the payment-behavior graph
 
 Compile a program graph with a maximum schedule length:

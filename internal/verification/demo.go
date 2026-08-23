@@ -11,20 +11,21 @@ import (
 )
 
 type DemoReport struct {
-	Version                 int               `json:"version"`
-	Mode                    string            `json:"mode"`
-	Seed                    int64             `json:"seed"`
-	Budget                  int               `json:"budget"`
-	RazorpaySignature       DemoSignature     `json:"razorpay_signature"`
-	Programs                []DemoProgram     `json:"programs"`
-	Search                  []BaselineSummary `json:"search"`
-	HeldOut                 IndependentReport `json:"held_out"`
-	FeaturedFinding         *DemoFinding      `json:"featured_finding"`
-	ScoutModelBytes         int               `json:"scout_model_bytes"`
-	ScoutParameterCount     int               `json:"scout_parameter_count"`
-	RepairCheckedSchedules  int               `json:"repair_checked_schedules"`
-	RepairRemainingFailures int               `json:"repair_remaining_failures"`
-	Passed                  bool              `json:"passed"`
+	Version                 int                     `json:"version"`
+	Mode                    string                  `json:"mode"`
+	Seed                    int64                   `json:"seed"`
+	Budget                  int                     `json:"budget"`
+	RazorpaySignature       DemoSignature           `json:"razorpay_signature"`
+	Programs                []DemoProgram           `json:"programs"`
+	Search                  []BaselineSummary       `json:"search"`
+	HeldOut                 IndependentReport       `json:"held_out"`
+	InvariantContracts      InvariantContractReport `json:"invariant_contracts"`
+	FeaturedFinding         *DemoFinding            `json:"featured_finding"`
+	ScoutModelBytes         int                     `json:"scout_model_bytes"`
+	ScoutParameterCount     int                     `json:"scout_parameter_count"`
+	RepairCheckedSchedules  int                     `json:"repair_checked_schedules"`
+	RepairRemainingFailures int                     `json:"repair_remaining_failures"`
+	Passed                  bool                    `json:"passed"`
 }
 
 type DemoFinding struct {
@@ -141,6 +142,11 @@ func RunDemo() (DemoReport, error) {
 		return DemoReport{}, err
 	}
 	report.HeldOut = heldOut
+	contracts, err := RunInvariantContractReport()
+	if err != nil {
+		return DemoReport{}, err
+	}
+	report.InvariantContracts = contracts
 	repair, err := VerifyTerminalStateRepair(corpus)
 	if err != nil {
 		return DemoReport{}, err

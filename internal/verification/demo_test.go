@@ -29,4 +29,7 @@ func TestDemoIsDeterministicAndComplete(t *testing.T) {
 	if len(first.HeldOut.Cases) != 8 || len(first.HeldOut.RandomSeeds) != 100 {
 		t.Fatalf("held-out evidence is incomplete: %#v", first.HeldOut)
 	}
+	if !first.InvariantContracts.Passed || len(first.InvariantContracts.Contracts) != 5 {
+		t.Fatalf("invariant contracts are incomplete: %#v", first.InvariantContracts)
+	}
 }
