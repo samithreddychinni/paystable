@@ -8,6 +8,7 @@ const METHOD_LABELS = {
   random: 'Random search',
   coverage: 'Coverage-guided',
   scout: 'Scout',
+  'scout-closed-loop': 'Scout closed-loop',
 }
 
 const STEP_LABELS = {
@@ -71,6 +72,49 @@ function SearchTable({ search, vulnerableCount }) {
   )
 }
 
+function HeldOutTable({ report }) {
+  return (
+    <div className="overflow-hidden rounded-xl border border-bg-border bg-bg-surface">
+      <div className="border-b border-bg-border px-5 py-4">
+        <h2 className="text-sm font-medium text-text-primary">Frozen held-out comparison</h2>
+        <p className="mt-1 text-xs text-text-muted">The split uses complete merchant implementations. Random search aggregates 100 fixed seeds.</p>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-left text-xs">
+          <thead className="border-b border-bg-border text-text-muted">
+            <tr>
+              <th className="px-5 py-3 font-normal">Method</th>
+              <th className="px-5 py-3 font-normal">Success@3</th>
+              <th className="px-5 py-3 font-normal">Success@10</th>
+              <th className="px-5 py-3 font-normal">Median rank</th>
+              <th className="px-5 py-3 font-normal">MRR</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-bg-border">
+            {report.summary.map((row) => {
+              const strongest = row.method === 'scout-closed-loop'
+              return (
+                <tr key={row.method} className={strongest ? 'bg-status-green/5' : ''}>
+                  <td className={cn('px-5 py-3 font-medium', strongest ? 'text-status-green' : 'text-text-primary')}>
+                    {METHOD_LABELS[row.method]}
+                  </td>
+                  <td className="px-5 py-3 font-mono text-text-secondary">{(row.success_at_3 * 100).toFixed(1)}%</td>
+                  <td className="px-5 py-3 font-mono text-text-secondary">{(row.success_at_10 * 100).toFixed(1)}%</td>
+                  <td className="px-5 py-3 font-mono text-text-secondary">{row.median_executions_before_finding}</td>
+                  <td className="px-5 py-3 font-mono text-text-secondary">{row.mean_reciprocal_rank.toFixed(3)}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div className="border-t border-bg-border px-5 py-3 text-xs leading-5 text-text-muted">
+        Standard Scout beats random on median rank and MRR, but not on Success@10. Closed-loop Scout uses observations, not vulnerability labels.
+      </div>
+    </div>
+  )
+}
+
 function Finding({ finding }) {
   const violation = finding.result.violations[0]
 
@@ -78,7 +122,7 @@ function Finding({ finding }) {
     <div className="overflow-hidden rounded-xl border border-bg-border bg-bg-surface">
       <div className="border-b border-bg-border px-5 py-4 sm:flex sm:items-start sm:justify-between sm:gap-4">
         <div>
-          <p className="text-xs font-mono text-status-red">{violation.invariant}</p>
+          <p className="text-xs font-mono text-status-red">Regression proof · {violation.invariant}</p>
           <h2 className="mt-1 text-sm font-medium text-text-primary">One payment fulfilled twice</h2>
           <p className="mt-1 max-w-2xl text-xs text-text-muted">{violation.detail}.</p>
         </div>
@@ -124,8 +168,9 @@ export default function TestKit() {
   }
 
   const vulnerableCount = report?.programs.filter((program) => program.expected_invariant).length ?? 0
-  const correctCount = report ? report.programs.length - vulnerableCount : 0
-  const scout = report?.search.find(({ method }) => method === 'scout')
+  const heldOutVulnerable = report?.held_out.cases.filter((program) => program.expected_invariant).length ?? 0
+  const heldOutCorrect = report ? report.held_out.cases.length - heldOutVulnerable : 0
+  const heldOutClosed = report?.held_out.summary.find(({ method }) => method === 'scout-closed-loop')
 
   return (
     <div className="mx-auto max-w-[1100px] space-y-6">
@@ -180,16 +225,16 @@ export default function TestKit() {
             <div>
               <h2 className="text-sm font-medium text-text-primary">Scout evaluation complete</h2>
               <p className="mt-1 text-xs leading-5 text-text-muted">
-                Scout found all {vulnerableCount} known failures within 10 schedules. All {correctCount} correct controls stayed clean.
+                Closed-loop Scout found all {heldOutVulnerable} held-out failures within 3 schedules. All {heldOutCorrect} controls stayed clean.
               </p>
               <p className="mt-1 font-mono text-[11px] text-text-muted">Seed {report.seed} · budget {report.budget} · deterministic in-process run</p>
             </div>
           </section>
 
           <section className="grid divide-y divide-bg-border overflow-hidden rounded-xl border border-bg-border bg-bg-surface sm:grid-cols-2 sm:divide-x sm:divide-y-0 lg:grid-cols-4">
-            <Metric label="Regression failures" value={`${vulnerableCount}/${vulnerableCount}`} detail="Found within 10 schedules" />
-            <Metric label="Regression controls" value={`${correctCount}/${correctCount}`} detail="No invariant findings" />
-            <Metric label="Scout median rank" value={scout?.median_executions_before_finding ?? '—'} detail="Schedules before a finding" />
+            <Metric label="Held-out failures" value={`${heldOutVulnerable}/${heldOutVulnerable}`} detail="Closed-loop Scout within 3 schedules" />
+            <Metric label="Held-out controls" value={`${heldOutCorrect}/${heldOutCorrect}`} detail="No invariant findings" />
+            <Metric label="Closed-loop median" value={heldOutClosed?.median_executions_before_finding ?? '—'} detail="Held-out discovery rank" />
             <Metric
               label="Scout ranker"
               value={`${report.scout_parameter_count} weights · ${report.scout_model_bytes.toLocaleString()} bytes`}
@@ -197,13 +242,14 @@ export default function TestKit() {
             />
           </section>
 
+          <HeldOutTable report={report.held_out} />
           <Finding finding={report.featured_finding} />
           <SearchTable search={report.search} vulnerableCount={vulnerableCount} />
 
           <section className="rounded-xl border border-bg-border px-5 py-4">
             <h2 className="text-sm font-medium text-text-primary">Evidence boundary</h2>
             <p className="mt-1 max-w-3xl text-xs leading-5 text-text-muted">
-              This run uses synthetic programs and repository-authored controls. It does not prove accuracy on unseen production failures.
+              This run uses repository-authored merchants and synthetic regression programs. It does not establish accuracy on unseen production failures.
             </p>
           </section>
         </>

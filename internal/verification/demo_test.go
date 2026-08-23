@@ -26,4 +26,7 @@ func TestDemoIsDeterministicAndComplete(t *testing.T) {
 	if first.FeaturedFinding == nil || len(first.FeaturedFinding.Result.Violations) != 1 || first.FeaturedFinding.Reduction.ReducedActionCount != 3 {
 		t.Fatalf("featured finding is incomplete: %#v", first.FeaturedFinding)
 	}
+	if len(first.HeldOut.Cases) != 8 || len(first.HeldOut.RandomSeeds) != 100 {
+		t.Fatalf("held-out evidence is incomplete: %#v", first.HeldOut)
+	}
 }

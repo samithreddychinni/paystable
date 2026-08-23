@@ -18,6 +18,7 @@ type DemoReport struct {
 	RazorpaySignature       DemoSignature     `json:"razorpay_signature"`
 	Programs                []DemoProgram     `json:"programs"`
 	Search                  []BaselineSummary `json:"search"`
+	HeldOut                 IndependentReport `json:"held_out"`
 	FeaturedFinding         *DemoFinding      `json:"featured_finding"`
 	ScoutModelBytes         int               `json:"scout_model_bytes"`
 	ScoutParameterCount     int               `json:"scout_parameter_count"`
@@ -135,6 +136,11 @@ func RunDemo() (DemoReport, error) {
 			return DemoReport{}, fmt.Errorf("search method %s did not pass", summary.Method)
 		}
 	}
+	heldOut, err := RunHeldOutReport(corpus, budget, seed)
+	if err != nil {
+		return DemoReport{}, err
+	}
+	report.HeldOut = heldOut
 	repair, err := VerifyTerminalStateRepair(corpus)
 	if err != nil {
 		return DemoReport{}, err

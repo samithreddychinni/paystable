@@ -27,9 +27,10 @@ Paystable protects the payment state and callback path. Scout ranks legal fault 
 
 3. Select **Run verification**.
 4. Explain the three trust steps: Scout ranks, the lab executes, and invariants prove.
-5. Show the duplicate-fulfillment trace and its 1-minimal schedule.
-6. Compare Scout with bounded, random, and coverage-guided search.
-7. Read the evidence boundary before you finish.
+5. Show the frozen held-out comparison.
+6. State that standard Scout does not beat random on `Success@10`.
+7. Show the duplicate-fulfillment trace and its 1-minimal schedule.
+8. Read the evidence boundary before you finish.
 
 Use the raw command after the visual demonstration when a reviewer wants the complete report:
 
