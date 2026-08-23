@@ -217,6 +217,10 @@ It also rejects a signed event that has no event ID.
 It also sends a signed event through the actual external HTTP route and PostgreSQL schema.
 A rejected ledger write returns 500 without a state change or provider fetch.
 The same event succeeds after recovery, and its next duplicate is an idempotent 200.
+PostgreSQL also terminates the application's open connections.
+The check then sends a new signed event through a terminated connection.
+The request returns 500 without a provider fetch.
+The next delivery must return 200, activate the plan, and create one ledger row.
 The provider fetch uses a local HTTP server, and the full external application is not started.
 These results are correct external controls.
 The replay-window challenge is absent from Scout training.

@@ -64,6 +64,11 @@ It revokes the ledger INSERT permission to inject a real database rejection.
 The failed request returns 500, does not change the tenant, and does not call the provider API.
 After the permission is restored, the same signed event returns 200 and activates the plan.
 A duplicate delivery returns 200 without another ledger row or provider request.
+PostgreSQL then terminates the application's open connections.
+The check sends a new signed event through a terminated connection.
+The request returns 500 and does not call the provider API.
+The next delivery must return 200, activate the plan, and create one ledger row.
+This check detects a ledger row that suppresses an incomplete event.
 The provider fetch uses a local HTTP server, not the Razorpay API.
 The check does not start the complete wpmgr application or its unrelated services.
 The source requires Go 1.26.3, so Go can download that toolchain.

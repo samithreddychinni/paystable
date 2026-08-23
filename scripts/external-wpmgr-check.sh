@@ -19,5 +19,5 @@ cp "$repo_dir/testkit/external/wpmgr/http_postgres_retry_test.go.txt" \
 
 cd "$source_dir/apps/api"
 GOTOOLCHAIN=auto go test ./internal/billing/razorpay ./internal/billing \
-	-run '^TestPaystable(ProbeChecksUnicodeAndTampering|RouteRetriesAfterPostgresWriteFailure)$' -count=1
+	-run '^TestPaystable(ProbeChecksUnicodeAndTampering|RouteRecoversAfterPostgresFailures)$' -count=1
 printf '%s\n' 'The external signature, HTTP, and PostgreSQL checks passed.'

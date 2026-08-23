@@ -7,7 +7,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -28,7 +27,7 @@ import (
 	"github.com/mosamlife/wpmgr/apps/api/internal/domain"
 )
 
-func TestPaystableRouteRetriesAfterPostgresWriteFailure(t *testing.T) {
+func TestPaystableRouteRecoversAfterPostgresFailures(t *testing.T) {
 	app, admin := paystablePostgres(t)
 	tenant := uuid.New()
 	if _, err := app.Exec(context.Background(), `INSERT INTO tenants (id, name, slug, billing_provider, provider_customer_id) VALUES ($1, 'Paystable', 'paystable-route-retry', 'razorpay', 'cust_paystable')`, tenant); err != nil {
@@ -55,7 +54,8 @@ func TestPaystableRouteRetriesAfterPostgresWriteFailure(t *testing.T) {
 		PlanScaleUSD: "plan_scale_usd", PlanScaleINR: "plan_scale_inr",
 		BaseURL: providerAPI.URL,
 	})
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, nil))
 	service := billing.New(app, nil, true, domain.SystemClock{}, logger)
 	service.SetProviders(billing.NewRegistry(provider), "razorpay")
 	gin.SetMode(gin.TestMode)
@@ -70,6 +70,9 @@ func TestPaystableRouteRetriesAfterPostgresWriteFailure(t *testing.T) {
 		response := httptest.NewRecorder()
 		request := httptest.NewRequest(http.MethodPost, "/webhooks/billing/razorpay", bytes.NewReader(body))
 		request.Header = headers.Clone()
+		requestContext, cancel := context.WithTimeout(request.Context(), time.Second)
+		defer cancel()
+		request = request.WithContext(requestContext)
 		router.ServeHTTP(response, request)
 		return response
 	}
@@ -107,6 +110,36 @@ func TestPaystableRouteRetriesAfterPostgresWriteFailure(t *testing.T) {
 	}
 	if fetches.Load() != 1 {
 		t.Fatalf("the replay and duplicate made %d provider requests, want 1", fetches.Load())
+	}
+	if _, err := app.Exec(context.Background(), "UPDATE tenants SET plan = 'free', plan_status = 'none' WHERE id = $1", tenant); err != nil {
+		t.Fatalf("could not reset the tenant before the connection loss: %v", err)
+	}
+
+	headers.Set("X-Razorpay-Event-Id", "evt_paystable_connection_loss")
+	var terminated int
+	if err := admin.QueryRow(context.Background(), `SELECT count(*) FROM (SELECT pg_terminate_backend(pid) AS stopped FROM pg_stat_activity WHERE usename = 'wpmgr_app') AS connections WHERE stopped`).Scan(&terminated); err != nil {
+		t.Fatalf("could not terminate the PostgreSQL connections: %v", err)
+	}
+	if terminated == 0 {
+		t.Fatal("PostgreSQL did not terminate an application connection")
+	}
+	if response := send(); response.Code != http.StatusInternalServerError {
+		t.Fatalf("the connection loss returned %d, want 500: %s", response.Code, response.Body.String())
+	}
+	if fetches.Load() != 1 {
+		t.Fatal("the connection loss reached the provider API")
+	}
+	if response := send(); response.Code != http.StatusOK {
+		t.Fatalf("the replay did not recover: status %d: %s\n%s", response.Code, response.Body.String(), logs.String())
+	}
+	if plan, status := paystableTenantState(t, app, tenant); plan != string(billing.TierStarter) || status != "active" {
+		t.Fatalf("the replay after connection loss left the tenant at %s/%s, want starter/active", plan, status)
+	}
+	if got := paystableEventCount(t, admin); got != 2 {
+		t.Fatalf("the connection loss and replay left %d ledger rows, want 2 total", got)
+	}
+	if fetches.Load() != 2 {
+		t.Fatalf("the replay after connection loss made %d provider requests, want 2 total", fetches.Load())
 	}
 }
 
@@ -168,7 +201,7 @@ func paystableTenantState(t *testing.T, pool *db.Pool, tenant uuid.UUID) (string
 func paystableEventCount(t *testing.T, pool *db.Pool) int {
 	t.Helper()
 	var count int
-	if err := pool.QueryRow(context.Background(), "SELECT count(*) FROM billing_events WHERE provider_event_id = 'evt_paystable_route_retry'").Scan(&count); err != nil {
+	if err := pool.QueryRow(context.Background(), "SELECT count(*) FROM billing_events WHERE provider = 'razorpay'").Scan(&count); err != nil {
 		t.Fatalf("could not read the event ledger: %v", err)
 	}
 	return count
