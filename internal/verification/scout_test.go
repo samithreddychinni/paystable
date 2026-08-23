@@ -37,7 +37,7 @@ func TestScoutIsDeterministicAndBeatsBaselineMedian(t *testing.T) {
 	}
 	for _, baseline := range baselines.Summary {
 		if first.Summary.MedianExecutionsBeforeFinding >= baseline.MedianExecutionsBeforeFinding {
-			t.Fatalf("Scout median %d did not beat %s median %d", first.Summary.MedianExecutionsBeforeFinding, baseline.Method, baseline.MedianExecutionsBeforeFinding)
+			t.Fatalf("Scout median %.1f did not beat %s median %.1f", first.Summary.MedianExecutionsBeforeFinding, baseline.Method, baseline.MedianExecutionsBeforeFinding)
 		}
 	}
 }

@@ -38,10 +38,14 @@ type BaselineRun struct {
 
 type BaselineSummary struct {
 	Method                        string  `json:"method"`
+	SuccessAt1                    float64 `json:"success_at_1"`
+	SuccessAt3                    float64 `json:"success_at_3"`
+	SuccessAt5                    float64 `json:"success_at_5"`
 	SuccessAt10                   float64 `json:"success_at_10"`
 	SuccessAt25                   float64 `json:"success_at_25"`
 	SuccessAt50                   float64 `json:"success_at_50"`
-	MedianExecutionsBeforeFinding int     `json:"median_executions_before_finding"`
+	MedianExecutionsBeforeFinding float64 `json:"median_executions_before_finding"`
+	MeanReciprocalRank            float64 `json:"mean_reciprocal_rank"`
 	FalseFindingCount             int     `json:"false_finding_count"`
 	DeterministicReplayRate       float64 `json:"deterministic_replay_rate"`
 	RedundantScheduleRate         float64 `json:"redundant_schedule_rate"`
@@ -69,7 +73,7 @@ func RunBaselineReport(corpus ProgramCorpus, budget int, seed int64) (BaselineRe
 			}
 			report.Runs = append(report.Runs, run)
 		}
-		report.Summary = append(report.Summary, summarizeBaseline(method, corpus, report.Runs))
+		report.Summary = append(report.Summary, summarizeBaseline(method, corpus, report.Runs, budget))
 	}
 	return report, nil
 }
@@ -229,29 +233,40 @@ func resultHasInvariant(result Result, invariant string) bool {
 	return false
 }
 
-func summarizeBaseline(method string, corpus ProgramCorpus, runs []BaselineRun) BaselineSummary {
+func summarizeBaseline(method string, corpus ProgramCorpus, runs []BaselineRun, budget int) BaselineSummary {
 	summary := BaselineSummary{Method: method}
 	var vulnerable, executions, redundant, replayChecks, deterministic int
 	var findings []int
+	vulnerablePrograms := make(map[string]bool)
 	for _, program := range corpus.Programs {
-		var run BaselineRun
-		for _, candidate := range runs {
-			if candidate.Method == method && candidate.Program == program.Program {
-				run = candidate
-				break
-			}
+		vulnerablePrograms[program.Program] = program.ExpectedInvariant != ""
+	}
+	for _, run := range runs {
+		if run.Method != method {
+			continue
 		}
 		executions += run.Executions
 		redundant += run.RedundantSchedules
 		replayChecks += run.ReplayChecks
 		deterministic += run.DeterministicReplays
 		summary.FalseFindingCount += run.FalseFindings
-		if program.ExpectedInvariant == "" {
+		if !vulnerablePrograms[run.Program] {
 			continue
 		}
 		vulnerable++
+		rank := budget + 1
 		if run.Found {
-			findings = append(findings, run.FirstFindingExecution)
+			rank = run.FirstFindingExecution
+			summary.MeanReciprocalRank += 1 / float64(rank)
+			if rank <= 1 {
+				summary.SuccessAt1++
+			}
+			if rank <= 3 {
+				summary.SuccessAt3++
+			}
+			if rank <= 5 {
+				summary.SuccessAt5++
+			}
 			if run.FirstFindingExecution <= 10 {
 				summary.SuccessAt10++
 			}
@@ -262,15 +277,24 @@ func summarizeBaseline(method string, corpus ProgramCorpus, runs []BaselineRun) 
 				summary.SuccessAt50++
 			}
 		}
+		findings = append(findings, rank)
 	}
 	if vulnerable != 0 {
+		summary.SuccessAt1 /= float64(vulnerable)
+		summary.SuccessAt3 /= float64(vulnerable)
+		summary.SuccessAt5 /= float64(vulnerable)
 		summary.SuccessAt10 /= float64(vulnerable)
 		summary.SuccessAt25 /= float64(vulnerable)
 		summary.SuccessAt50 /= float64(vulnerable)
+		summary.MeanReciprocalRank /= float64(vulnerable)
 	}
 	if len(findings) != 0 {
 		slices.Sort(findings)
-		summary.MedianExecutionsBeforeFinding = findings[len(findings)/2]
+		middle := len(findings) / 2
+		summary.MedianExecutionsBeforeFinding = float64(findings[middle])
+		if len(findings)%2 == 0 {
+			summary.MedianExecutionsBeforeFinding = float64(findings[middle-1]+findings[middle]) / 2
+		}
 	}
 	if executions != 0 {
 		summary.RedundantScheduleRate = float64(redundant) / float64(executions)

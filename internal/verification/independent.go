@@ -13,10 +13,16 @@ import (
 type IndependentReport struct {
 	Version         int                     `json:"version"`
 	Evaluation      string                  `json:"evaluation"`
+	TrainingSet     string                  `json:"training_set"`
+	EvaluationSet   string                  `json:"evaluation_set"`
+	SplitUnit       string                  `json:"split_unit"`
+	FixedPriors     bool                    `json:"fixed_priors"`
 	Budget          int                     `json:"budget"`
+	MissRank        int                     `json:"miss_rank"`
 	Seed            int64                   `json:"seed"`
 	RandomSeeds     []int64                 `json:"random_seeds"`
 	ScoutModelBytes int                     `json:"scout_model_bytes"`
+	ScoutParameters int                     `json:"scout_parameters"`
 	Cases           []IndependentCaseReport `json:"cases"`
 	Runs            []BaselineRun           `json:"runs"`
 	Summary         []BaselineSummary       `json:"summary"`
@@ -78,10 +84,13 @@ func RunIndependentReport(training ProgramCorpus, budget int, seed int64) (Indep
 		return IndependentReport{}, err
 	}
 	report := IndependentReport{
-		Version: 8, Evaluation: "independent-merchant-implementations",
-		Budget: budget, Seed: seed, ScoutModelBytes: len(modelJSON),
+		Version: 9, Evaluation: "implementation-held-out-known-family-transfer",
+		TrainingSet: "synthetic-regression-corpus", EvaluationSet: "repository-authored-known-family-transfer",
+		SplitUnit: "complete-implementation", FixedPriors: true,
+		Budget: budget, MissRank: budget + 1, Seed: seed,
+		ScoutModelBytes: len(modelJSON), ScoutParameters: len(model.Weights),
 	}
-	for offset := int64(0); offset < 20; offset++ {
+	for offset := int64(0); offset < 100; offset++ {
 		report.RandomSeeds = append(report.RandomSeeds, seed+offset)
 	}
 	cases := independentCases()
@@ -143,11 +152,11 @@ func RunIndependentReport(training ProgramCorpus, budget int, seed int64) (Indep
 		report.Runs = append(report.Runs, closed)
 	}
 	for _, method := range []string{BaselineBounded, BaselineRandom, BaselineCoverage, ScoutMethod, ScoutClosedLoopMethod} {
-		report.Summary = append(report.Summary, summarizeBaseline(method, corpus, report.Runs))
 		runs := report.Runs
 		if method == BaselineRandom {
 			runs = randomTrials
 		}
+		report.Summary = append(report.Summary, summarizeBaseline(method, corpus, runs, budget))
 		report.Confidence = append(report.Confidence, successConfidence(method, corpus, runs))
 	}
 	return report, nil

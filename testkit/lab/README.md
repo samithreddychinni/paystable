@@ -144,13 +144,16 @@ go run ./testkit/lab independent 50 7
 ```
 
 The benchmark contains twelve vulnerable implementations and twelve correct implementations.
-The random baseline uses 20 consecutive seeds.
+The random baseline uses the 100 frozen seeds from 7 through 106.
 The report includes Wilson 95% intervals for `Success@10`.
+The random summary aggregates all 100 seeds.
 Two amount implementations parse raw webhook JSON in a separate package.
 They do not import simulator code.
 They are repository-authored implementations, not third-party code.
 Two order implementations use the same independent boundary.
 Two currency implementations use the same independent boundary.
+This benchmark tests new implementations of known bug families.
+It is not the final PRD version 3 held-out benchmark.
 
 Run the optional [external implementation checks](../external/README.md) separately.
 The external results are not part of the Scout performance report.

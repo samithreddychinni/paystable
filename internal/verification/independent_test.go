@@ -21,8 +21,11 @@ func TestIndependentReportUsesUnseenImplementations(t *testing.T) {
 	if len(first.Cases) != 24 {
 		t.Fatalf("independent report has %d cases, want 24", len(first.Cases))
 	}
-	if len(first.RandomSeeds) != 20 || len(first.Confidence) != 5 {
+	if len(first.RandomSeeds) != 100 || len(first.Confidence) != 5 {
 		t.Fatalf("independent report has %d seeds and %d confidence estimates", len(first.RandomSeeds), len(first.Confidence))
+	}
+	if first.SplitUnit != "complete-implementation" || first.MissRank != 51 || !first.FixedPriors || first.ScoutParameters != len(scoutFeatureNames) {
+		t.Fatalf("independent report has incomplete protocol metadata: %#v", first)
 	}
 	var scout BaselineSummary
 	for _, summary := range first.Summary {
@@ -44,7 +47,7 @@ func TestIndependentReportUsesUnseenImplementations(t *testing.T) {
 		}
 	}
 	for _, estimate := range first.Confidence {
-		if estimate.Method == BaselineRandom && (estimate.Trials != 240 || estimate.FalseFindingCount != 0) {
+		if estimate.Method == BaselineRandom && (estimate.Trials != 1200 || estimate.FalseFindingCount != 0) {
 			t.Fatalf("random confidence estimate is invalid: %#v", estimate)
 		}
 	}

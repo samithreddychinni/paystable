@@ -633,7 +633,7 @@ func RunPriorFreeStressReport(corpus ProgramCorpus, budget int, seed int64) (Sco
 	}
 	slices.Sort(report.AmbiguousFamilies)
 	report.Confidence = successConfidence(ScoutPriorFreeMethod, corpus, report.Runs)
-	report.AdversarialSummary = summarizeBaseline(ScoutPriorFreeMethod, corpus, report.AdversarialRuns)
+	report.AdversarialSummary = summarizeBaseline(ScoutPriorFreeMethod, corpus, report.AdversarialRuns, budget)
 	return report, nil
 }
 
@@ -748,7 +748,7 @@ func runScoutReport(corpus ProgramCorpus, budget int, closedLoop, fixedPriors bo
 		}
 		report.Runs = append(report.Runs, run)
 	}
-	report.Summary = summarizeBaseline(method, corpus, report.Runs)
+	report.Summary = summarizeBaseline(method, corpus, report.Runs, budget)
 	return report, nil
 }
 

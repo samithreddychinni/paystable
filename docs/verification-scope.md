@@ -153,6 +153,29 @@ The stress report must add matched safe schedules for mismatch actions.
 The same report must place safe schedules first for an adversarial tie check.
 A perfect bounded score does not prove production accuracy.
 
+### Frozen PRD version 3 evaluation protocol
+
+The model features and fixed priors freeze at commit `b245a558166accacfa13039ffeff2ce0425f5a24`.
+The 25-program corpus is the regression laboratory.
+The 24 independent implementations test transfer to separate code for known bug families.
+They are not the final held-out benchmark because they were inspected during development.
+
+The final held-out benchmark uses these rules:
+
+1. Split by complete merchant implementation.
+2. Exclude all held-out code and schedules from training and manual tuning.
+3. Use the same candidate schedules, reset behavior, timeout, and budget for each method.
+4. Use an execution budget of 50 schedules for each implementation.
+5. Use random seeds 7 through 106 for the random baseline.
+6. Report `Success@1`, `Success@3`, `Success@5`, `Success@10`, `Success@25`, and `Success@50`.
+7. Report mean reciprocal rank and the median discovery rank.
+8. Assign rank 51 and reciprocal rank zero to each miss.
+9. Average the two middle ranks when the count is even.
+10. Report false findings and replay results for correct controls.
+
+If a held-out result changes Scout, move that implementation to regression.
+Create a replacement implementation before the next held-out evaluation.
+
 ## Stretch work
 
 The following work must not delay the required release:
@@ -207,6 +230,7 @@ Deterministic invariants decide whether each execution found a bug.
 
 The current corpus is synthetic.
 The 24 independent benchmark merchants are repository-authored.
+They test known-family transfer and are not the final PRD version 3 held-out set.
 Two optional probes execute pinned external Razorpay webhook handlers.
 The external results are not part of the Scout performance report.
 The first probe reproduces amount, currency, and order binding failures.

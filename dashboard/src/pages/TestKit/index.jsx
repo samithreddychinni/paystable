@@ -35,7 +35,7 @@ function SearchTable({ search, vulnerableCount }) {
     <div className="overflow-hidden rounded-xl border border-bg-border bg-bg-surface">
       <div className="border-b border-bg-border px-5 py-4">
         <h2 className="text-sm font-medium text-text-primary">Regression laboratory comparison</h2>
-        <p className="mt-1 text-xs text-text-muted">Each method receives the same legal schedules and execution budget.</p>
+        <p className="mt-1 text-xs text-text-muted">Each method receives the same legal schedules and budget. The random row uses one fixed seed.</p>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-left text-xs">

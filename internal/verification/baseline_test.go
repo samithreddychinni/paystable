@@ -30,3 +30,18 @@ func TestBaselineReportIsDeterministicAndFindsRequiredBugs(t *testing.T) {
 		}
 	}
 }
+
+func TestSummaryCountsBudgetMisses(t *testing.T) {
+	corpus := ProgramCorpus{Programs: []ProgramCase{
+		{Program: "found", ExpectedInvariant: InvariantFulfillmentAtMostOnce},
+		{Program: "missed", ExpectedInvariant: InvariantFulfillmentAtMostOnce},
+	}}
+	runs := []BaselineRun{
+		{Method: BaselineRandom, Program: "found", Found: true, FirstFindingExecution: 3},
+		{Method: BaselineRandom, Program: "missed"},
+	}
+	summary := summarizeBaseline(BaselineRandom, corpus, runs, 10)
+	if summary.SuccessAt3 != 0.5 || summary.MedianExecutionsBeforeFinding != 7 || summary.MeanReciprocalRank != 1.0/6.0 {
+		t.Fatalf("summary did not assign the miss rank 11: %#v", summary)
+	}
+}

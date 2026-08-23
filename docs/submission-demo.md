@@ -58,6 +58,7 @@ The external probe and genuine Test Mode evidence are described in [Verification
 - The benchmark programs are synthetic and repository-authored.
 - The 14-of-14 result is regression evidence, not held-out evidence.
 - The independent implementations are not third-party systems.
+- The independent benchmark tests known-family transfer. It is not the final held-out benchmark.
 - Two pinned third-party probes check narrow integration boundaries.
 - One genuine Razorpay Test Mode webhook is evidence of integration, not production load.
 - The published results do not guarantee accuracy on unseen production failures.
