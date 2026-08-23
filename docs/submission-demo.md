@@ -48,7 +48,7 @@ The external probe and genuine Test Mode evidence are described in [Verification
 ## Claims that the evidence supports
 
 - The demonstration is reproducible with a fixed seed and budget.
-- Scout ranks all known vulnerable demonstration programs within 10 schedules.
+- Scout ranks all 14 known vulnerable regression programs within 10 schedules.
 - Correct controls produce no invariant findings in the published runs.
 - Failure traces replay deterministically and reduce to a 1-minimal schedule.
 - The release gate checks application, PostgreSQL, webhook, callback, and network-failure paths.
@@ -56,6 +56,7 @@ The external probe and genuine Test Mode evidence are described in [Verification
 ## Limits
 
 - The benchmark programs are synthetic and repository-authored.
+- The 14-of-14 result is regression evidence, not held-out evidence.
 - The independent implementations are not third-party systems.
 - Two pinned third-party probes check narrow integration boundaries.
 - One genuine Razorpay Test Mode webhook is evidence of integration, not production load.

@@ -20,6 +20,7 @@ type DemoReport struct {
 	Search                  []BaselineSummary `json:"search"`
 	FeaturedFinding         *DemoFinding      `json:"featured_finding"`
 	ScoutModelBytes         int               `json:"scout_model_bytes"`
+	ScoutParameterCount     int               `json:"scout_parameter_count"`
 	RepairCheckedSchedules  int               `json:"repair_checked_schedules"`
 	RepairRemainingFailures int               `json:"repair_remaining_failures"`
 	Passed                  bool              `json:"passed"`
@@ -123,6 +124,7 @@ func RunDemo() (DemoReport, error) {
 	}
 	report.Search = append(report.Search, scout.Summary)
 	report.ScoutModelBytes = scout.ModelBytes
+	report.ScoutParameterCount = len(scout.Model.Weights)
 	closedLoop, err := RunClosedLoopReport(corpus, budget)
 	if err != nil {
 		return DemoReport{}, err

@@ -34,7 +34,7 @@ function SearchTable({ search, vulnerableCount }) {
   return (
     <div className="overflow-hidden rounded-xl border border-bg-border bg-bg-surface">
       <div className="border-b border-bg-border px-5 py-4">
-        <h2 className="text-sm font-medium text-text-primary">Search comparison</h2>
+        <h2 className="text-sm font-medium text-text-primary">Regression laboratory comparison</h2>
         <p className="mt-1 text-xs text-text-muted">Each method receives the same legal schedules and execution budget.</p>
       </div>
       <div className="overflow-x-auto">
@@ -83,8 +83,8 @@ function Finding({ finding }) {
           <p className="mt-1 max-w-2xl text-xs text-text-muted">{violation.detail}.</p>
         </div>
         <div className="mt-3 text-left sm:mt-0 sm:text-right">
-          <p className="font-mono text-sm text-text-primary">{finding.reduction.reduced_action_count} input actions</p>
-          <p className="text-xs text-text-muted">1-minimal and deterministic</p>
+          <p className="font-mono text-sm text-text-primary">{finding.reduction.reduced_action_count} scheduled actions</p>
+          <p className="text-xs text-text-muted">{finding.result.trace.length} observed steps · 1-minimal</p>
         </div>
       </div>
       <ol className="divide-y divide-bg-border" aria-label="Failure trace">
@@ -178,7 +178,7 @@ export default function TestKit() {
           <section role="status" className="flex items-start gap-3 rounded-xl border border-status-green/30 bg-status-green/5 px-5 py-4">
             <Check size={18} className="mt-0.5 shrink-0 text-status-green" />
             <div>
-              <h2 className="text-sm font-medium text-text-primary">Verification passed</h2>
+              <h2 className="text-sm font-medium text-text-primary">Scout evaluation complete</h2>
               <p className="mt-1 text-xs leading-5 text-text-muted">
                 Scout found all {vulnerableCount} known failures within 10 schedules. All {correctCount} correct controls stayed clean.
               </p>
@@ -187,10 +187,14 @@ export default function TestKit() {
           </section>
 
           <section className="grid divide-y divide-bg-border overflow-hidden rounded-xl border border-bg-border bg-bg-surface sm:grid-cols-2 sm:divide-x sm:divide-y-0 lg:grid-cols-4">
-            <Metric label="Known failures" value={`${vulnerableCount}/${vulnerableCount}`} detail="Found within 10 schedules" />
-            <Metric label="Correct controls" value={`${correctCount}/${correctCount}`} detail="No invariant findings" />
+            <Metric label="Regression failures" value={`${vulnerableCount}/${vulnerableCount}`} detail="Found within 10 schedules" />
+            <Metric label="Regression controls" value={`${correctCount}/${correctCount}`} detail="No invariant findings" />
             <Metric label="Scout median rank" value={scout?.median_executions_before_finding ?? '—'} detail="Schedules before a finding" />
-            <Metric label="Scout model" value={`${report.scout_model_bytes.toLocaleString()} B`} detail="Local ranking model" />
+            <Metric
+              label="Scout ranker"
+              value={`${report.scout_parameter_count} weights · ${report.scout_model_bytes.toLocaleString()} bytes`}
+              detail="Trained linear ranker with fixed priors · local deterministic inference"
+            />
           </section>
 
           <Finding finding={report.featured_finding} />
