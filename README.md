@@ -33,6 +33,24 @@ Paystable is intentionally narrow. It is not a PSP, not a checkout SDK, not a Hy
 
 ---
 
+## the complete flow
+
+Paystable has two connected parts.
+
+| Part | When it runs | Job |
+|---|---|---|
+| Runtime service | After checkout | Verify payment evidence, stabilize state, and deliver one trusted result. |
+| Scout laboratory | Before release | Test payment code against legal failure histories and produce replayable evidence. |
+
+```text
+before release:   legal schedules -> Scout -> isolated execution -> invariant check -> replay -> 1-minimal proof
+during operation: gateway signal  -> verify -> durable evidence  -> reconcile -> stable state -> signed callback
+```
+
+The runtime service protects live decisions. Scout tests the assumptions behind those decisions before deployment.
+
+---
+
 ## the user experience
 
 The customer should not stare at a spinner for a minute.
@@ -67,7 +85,7 @@ For physical goods, tickets, and seat reservations, keep the order reserved unti
 
 ---
 
-## how it works
+## how the runtime works
 
 ### Webhook ingestion
 
@@ -78,6 +96,8 @@ POST /webhooks/{gateway}
 ```
 
 Paystable verifies the gateway signature. Valid webhooks are persisted in Postgres. Invalid webhooks are stored in `webhooks_rejected` for forensics and metrics.
+
+Razorpay and PayU adapters convert verified gateway data into one normalized payment signal. The state machine does not depend on gateway event names.
 
 ### Stabilizer
 
@@ -104,6 +124,72 @@ When a hold expires, Paystable does not fail it on the timer alone. It runs one 
 
 Final states are delivered to your backend using signed HTTP callbacks. Delivery is at-least-once, so merchants must deduplicate with `X-Paystable-Idempotency-Key`.
 
+## how Scout works
+
+Payment code often fails only after several valid conditions occur together. A duplicate webhook can be harmless. The same webhook after a crash can cause a second fulfillment.
+
+The number of possible schedules grows quickly as tests add delay, reordering, crashes, timeouts, storage faults, tampering, and identity mismatches. Running every schedule is too expensive for a normal CI budget.
+
+Scout gives the local model one narrow job:
+
+> rank legal fault schedules so the laboratory can find a real invariant violation earlier.
+
+Scout does not decide whether a payment flow is correct. It does not approve payments, change merchant code, or send code to an external model. Versioned invariant checkers decide every finding.
+
+### one Scout run
+
+1. The generator creates legal schedules from supported fault actions.
+2. Scout scores each schedule with 24 schedule features and 24 trained weights.
+3. The isolated runner executes the highest-ranked schedules within a fixed budget.
+4. The recorder stores the scheduled inputs and observed execution steps separately.
+5. The invariant checker judges the complete trace.
+6. A finding must replay from the same initial state and schedule.
+7. The reducer removes actions while the same failure still reproduces.
+
+The final schedule is 1-minimal. Removing any one remaining input action removes that specific failure. The result is not necessarily the shortest possible schedule.
+
+The deterministic runner tests reference merchants in-process. The Docker laboratory also tests real HTTP behavior, process restarts, and PostgreSQL faults.
+
+Standard Scout keeps its ranking fixed during a run. Closed-loop Scout changes schedule priority from deterministic runtime observations. Evaluation reports show it as a separate method.
+
+### the payment invariants
+
+| ID | Required behavior | Example failure |
+|---|---|---|
+| `INV-1` | Fulfillment requires verified capture evidence with matching identity, amount, and currency. | A merchant fulfills an unverified or mismatched payment. |
+| `INV-2` | One order creates at most one logical fulfillment. | A crash and redelivery create two fulfillment effects. |
+| `INV-3` | An eligible order completes within a declared healthy time limit. | Retry exhaustion loses a valid fulfillment. |
+| `INV-4` | Committed payment states follow legal forward transitions. | A stale failure changes a captured payment to failed. |
+| `INV-5` | Each event and logical callback is accepted at most once. | A transport retry creates a repeated business effect. |
+
+These checks cover bounded execution histories. A passing run applies only to the executed schedules, environment, assumptions, and time limits.
+
+### what a finding contains
+
+Each verified finding records:
+
+- the program, run seed, execution mode, and execution budget
+- the serialized schedule and reduced schedule
+- the complete observed trace
+- the failed invariant
+- the deterministic replay result
+- the 1-minimal reduction result
+
+This evidence shows the exact history that caused the failure. A developer can inspect it, reproduce it, and keep it as a regression case.
+
+### why this is useful
+
+A normal happy-path test checks one expected history. Scout uses the test budget on legal histories that include faults and uncertain outcomes.
+
+A verified counterexample gives a team:
+
+- the exact event order that caused the failure
+- the named payment rule that failed
+- a deterministic way to reproduce the failure
+- a small schedule that is practical to inspect and retain
+
+Scout does not certify a passing program as production-safe. It makes each detected failure concrete, reviewable, and repeatable.
+
 ## verification evidence
 
 Run the deterministic demonstration:
@@ -112,12 +198,16 @@ Run the deterministic demonstration:
 go run ./testkit/lab demo
 ```
 
+The current Scout artifact is a 1,007-byte compact JSON file. Training fits 24 weights from 65,114 invariant-labeled schedule pairs. Inference runs locally on the CPU.
+
+Scout uses schedule features only. It does not use merchant identity, program identity, gateway identity, source code, or expected vulnerability labels during inference.
+
 The regression laboratory has 14 vulnerable programs and 11 correct controls.
 Scout finds all 14 known failures within ten schedules.
 
 The frozen held-out set has four vulnerable merchants and four correct controls.
 Standard Scout finds three failures within ten schedules and all four within 25 schedules.
-The fixed-prior-only ablation performs better in both static and closed-loop modes.
+Scout and the fixed-prior ablation tie on two merchants. Each leads on one merchant. This sample shows no measurable difference between them.
 
 These bounded results do not prove production accuracy.
 See [Scout model evidence](docs/scout-model.md), [Verification scope](docs/verification-scope.md), and [Submission demo](docs/submission-demo.md).
@@ -318,6 +408,7 @@ Set `SECRET_ENCRYPTION_KEY` before using rotation. During the rotation window, P
 ## docs
 
 - [Guide for judges](docs/judges-guide.md)
+- [Scout systems note](docs/systems-note.md)
 - [Product requirements](docs/prd.md)
 - [Database schema](docs/schema.md)
 - [Callback contract](docs/callback-contract.md)

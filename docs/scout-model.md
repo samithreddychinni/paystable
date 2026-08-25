@@ -106,7 +106,21 @@ All rows report zero false findings and a 100% replay rate.
 | Zero weights | No | No | 25% | 50% | 23.5 | 0.152 |
 
 The batch-trained ranker improves substantially over zero weights.
-However, the fixed-prior baseline performs better on this small held-out set.
+Against fixed priors alone, however, the correct reading of this small set is no measurable difference, not an established advantage.
+
+Per-program first-finding ranks on the same four vulnerable merchants:
+
+| Merchant | Fixed priors only | Trained with fixed priors |
+|---|---:|---:|
+| heldout-dedup-unsafe | 5 | 4 |
+| heldout-state-unsafe | 1 | 1 |
+| heldout-trust-unsafe | 1 | 1 |
+| heldout-retry-unsafe | 1 | 17 |
+
+The two rankers tie on two merchants.
+Each is nominally ahead on exactly one merchant.
+The whole mean-reciprocal-rank difference comes from one program, so at four vulnerable merchants a single program can flip the headline comparison.
+The defensible claim is "no measurable difference at this sample size, fixed priors nominally ahead", not "priors beat the trained model".
 
 This result does not satisfy the final AI ablation success criterion.
 We must not tune Scout against this held-out result.
@@ -123,8 +137,9 @@ It uses deterministic runtime observations to update schedule weights.
 | Zero weights | 75% | 100% | 2.0 | 0.438 |
 
 Closed-loop feedback improves the weak zero-weight start.
-However, fixed priors alone still outperform the trained starts.
-Therefore, closed-loop Scout also does not pass the learned-versus-prior ablation criterion.
+The remaining static-start differences shrink to single rank positions on single merchants.
+Every starting point converges to near-identical per-program ranks, so runtime feedback, not initial weights, dominates closed-loop behavior.
+Therefore, closed-loop Scout also does not pass the learned-versus-prior ablation criterion at this sample size.
 
 ## Training-only replacement experiment
 
