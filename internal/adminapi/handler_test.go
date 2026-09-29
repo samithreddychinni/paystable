@@ -4,11 +4,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/IDEA-Amrita/paystable/internal/localonly"
 )
 
 func TestLocalhostOnly_AllowsLoopback(t *testing.T) {
 	called := false
-	h := localhostOnly(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	h := localonly.Wrap(nil, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		called = true
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -26,7 +28,7 @@ func TestLocalhostOnly_AllowsLoopback(t *testing.T) {
 }
 
 func TestLocalhostOnly_RejectsExternal(t *testing.T) {
-	h := localhostOnly(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	h := localonly.Wrap(nil, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 

@@ -155,7 +155,11 @@ Dashboard:
 http://localhost:8080/dashboard
 ```
 
-Admin dashboard APIs are loopback-only. Put Paystable behind your own reverse proxy or SSH tunnel if you need remote access.
+Admin dashboard APIs accept only loopback traffic.
+
+In the Docker test setup, port 8080 binds to host loopback. It trusts only the bridge gateway through `ADMIN_ALLOWED_SOURCES`.
+
+If the bridge conflicts, set `PAYSTABLE_TESTKIT_SUBNET` and `PAYSTABLE_TESTKIT_GATEWAY`.
 
 For local end-to-end testing:
 
