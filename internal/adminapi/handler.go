@@ -3,14 +3,14 @@ package adminapi
 import (
 	"database/sql"
 	"encoding/json"
-	"net"
 	"net/http"
 
 	"github.com/IDEA-Amrita/paystable/internal/config"
+	"github.com/IDEA-Amrita/paystable/internal/localonly"
 )
 
 // Handler serves the read-only dashboard API plus the two write actions
-// (replay delivery, rotate secret). Everything here is gated to loopback.
+// (replay delivery, rotate secret). Everything here is limited to local operators.
 type Handler struct {
 	db  *sql.DB
 	cfg *config.Config
@@ -20,9 +20,9 @@ func New(db *sql.DB, cfg *config.Config) *Handler {
 	return &Handler{db: db, cfg: cfg}
 }
 
-// Register wires all /api/v1/admin routes onto mux, each behind the localhost gate.
+// Register wires all /api/v1/admin routes onto mux behind the operator access gate.
 func (h *Handler) Register(mux *http.ServeMux) {
-	g := localhostOnly
+	g := func(next http.Handler) http.Handler { return localonly.Wrap(h.cfg.AdminAllowedIPs, next) }
 
 	mux.Handle("GET /api/v1/admin/overview/stats", g(http.HandlerFunc(h.overviewStats)))
 	mux.Handle("GET /api/v1/admin/transactions", g(http.HandlerFunc(h.transactions)))
@@ -40,22 +40,6 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.Handle("POST /api/v1/admin/config/rotate-secret", g(http.HandlerFunc(h.rotateSecret)))
 	mux.Handle("GET /api/v1/admin/export/ledger", g(http.HandlerFunc(h.ExportLedger)))
 	mux.HandleFunc("GET /api/v1/transactions/{id}/timeline", h.PublicTimeline)
-}
-
-// localhostOnly rejects any request whose remote address is not loopback.
-func localhostOnly(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		host, _, err := net.SplitHostPort(r.RemoteAddr)
-		if err != nil {
-			host = r.RemoteAddr
-		}
-		ip := net.ParseIP(host)
-		if ip == nil || !ip.IsLoopback() {
-			http.Error(w, `{"error":"dashboard is available on localhost only"}`, http.StatusForbidden)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

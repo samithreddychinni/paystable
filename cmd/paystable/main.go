@@ -94,8 +94,8 @@ func main() {
 	adminHandler := adminapi.New(db, cfg)
 	adminHandler.Register(mux)
 
-	// ── Ops dashboard SPA (localhost-only, embedded in binary) ────────
-	ui.Register(mux)
+	// ── Ops dashboard SPA (local operators only, embedded in binary) ──
+	ui.Register(mux, cfg.AdminAllowedIPs)
 
 	srv := &http.Server{
 		Addr:    ":" + cfg.Port,

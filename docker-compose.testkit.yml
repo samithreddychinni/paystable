@@ -46,12 +46,20 @@ services:
       PAYU_STATUS_URL: http://mockgateway:9090/merchant/postservice.php
       MERCHANT_CALLBACK_SECRET: test-callback-secret
       ADMIN_API_KEY: test-admin-key
+      ADMIN_ALLOWED_SOURCES: ${PAYSTABLE_TESTKIT_GATEWAY:-172.30.0.1}
       PORT: 8080
       STABILIZATION_N: 3
       DELIVERY_ALLOW_INSECURE_CALLBACK: "true"
       LOG_LEVEL: debug
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     depends_on:
       postgres:
         condition: service_healthy
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: ${PAYSTABLE_TESTKIT_SUBNET:-172.30.0.0/24}
+          gateway: ${PAYSTABLE_TESTKIT_GATEWAY:-172.30.0.1}

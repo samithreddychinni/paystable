@@ -17,8 +17,33 @@ func clearAllEnvs(t *testing.T) {
 		"DATABASE_URL", "GATEWAY", "WEBHOOK_SECRET", "GATEWAY_API_KEY",
 		"PAYU_STATUS_URL", "MERCHANT_CALLBACK_SECRET", "ADMIN_API_KEY", "PORT",
 		"STABILIZATION_N", "MAX_BACKOFF_S", "HOLD_MAX_TTL_S", "LOG_LEVEL",
+		"ADMIN_ALLOWED_SOURCES",
 	} {
 		t.Setenv(env, "")
+	}
+}
+
+func TestLoad_AdminAllowedSources(t *testing.T) {
+	clearAllEnvs(t)
+	setRequiredEnvs(t)
+	t.Setenv("ADMIN_ALLOWED_SOURCES", "172.31.0.1, ::1")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(cfg.AdminAllowedIPs) != 2 {
+		t.Fatalf("AdminAllowedIPs = %v, want two addresses", cfg.AdminAllowedIPs)
+	}
+}
+
+func TestLoad_InvalidAdminAllowedSource(t *testing.T) {
+	clearAllEnvs(t)
+	setRequiredEnvs(t)
+	t.Setenv("ADMIN_ALLOWED_SOURCES", "invalid.invalid")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("expected error for invalid ADMIN_ALLOWED_SOURCES")
 	}
 }
 
