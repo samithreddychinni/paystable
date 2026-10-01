@@ -3,6 +3,7 @@ package config
 import (
 	"bufio"
 	"fmt"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -25,6 +26,7 @@ type Config struct {
 	DeliveryTimeoutS       int
 	DeliveryConcurrency    int
 	DeliveryAllowInsecure  bool
+	AdminAllowedIPs        []net.IP
 }
 
 // 1)StabilizationN:What: number of consecutive agreeing verification polls required to declare a terminal state (default 3)
@@ -44,6 +46,19 @@ func Load() (*Config, error) {
 		DeliveryTimeoutS:      envIntOr("DELIVERY_TIMEOUT_S", 10),
 		DeliveryConcurrency:   envIntOr("DELIVERY_WORKER_CONCURRENCY", 20),
 		DeliveryAllowInsecure: os.Getenv("DELIVERY_ALLOW_INSECURE_CALLBACK") == "true",
+	}
+	for _, value := range strings.Split(os.Getenv("ADMIN_ALLOWED_SOURCES"), ",") {
+		if value = strings.TrimSpace(value); value != "" {
+			ip := net.ParseIP(value)
+			if ip == nil {
+				resolved, err := net.ResolveIPAddr("ip", value)
+				if err != nil {
+					return nil, fmt.Errorf("ADMIN_ALLOWED_SOURCES contains invalid address %q", value)
+				}
+				ip = resolved.IP
+			}
+			c.AdminAllowedIPs = append(c.AdminAllowedIPs, ip)
+		}
 	}
 
 	required := map[string]*string{

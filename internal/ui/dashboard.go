@@ -7,6 +7,8 @@ import (
 	"net"
 	"net/http"
 	"strings"
+
+	"github.com/IDEA-Amrita/paystable/internal/localonly"
 )
 
 //go:embed dist
@@ -15,8 +17,8 @@ var dist embed.FS
 // Register mounts the dashboard SPA at /dashboard/ on mux.
 // Real files (assets) are served directly; any other path under /dashboard/
 // falls back to index.html so client-side routes like /dashboard/transactions
-// work on a hard refresh or a pasted deep link. Loopback only.
-func Register(mux *http.ServeMux) {
+// work on a hard refresh or a pasted deep link. Local operators only.
+func Register(mux *http.ServeMux, allowed []net.IP) {
 	sub, err := fs.Sub(dist, "dist")
 	if err != nil {
 		panic("ui: failed to sub dashboard dist: " + err.Error())
@@ -46,21 +48,6 @@ func Register(mux *http.ServeMux) {
 		_, _ = io.Copy(w, strings.NewReader(string(indexHTML)))
 	}
 
-	mux.Handle("/dashboard/", localOnly(http.HandlerFunc(handler)))
-	mux.Handle("/dashboard", localOnly(http.RedirectHandler("/dashboard/", http.StatusMovedPermanently)))
-}
-
-func localOnly(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		host, _, err := net.SplitHostPort(r.RemoteAddr)
-		if err != nil {
-			host = r.RemoteAddr
-		}
-		ip := net.ParseIP(host)
-		if ip == nil || !ip.IsLoopback() {
-			http.Error(w, "dashboard is available on localhost only", http.StatusForbidden)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
+	mux.Handle("/dashboard/", localonly.Wrap(allowed, http.HandlerFunc(handler)))
+	mux.Handle("/dashboard", localonly.Wrap(allowed, http.RedirectHandler("/dashboard/", http.StatusMovedPermanently)))
 }
