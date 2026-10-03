@@ -2,6 +2,8 @@
 
 ## unreleased
 
+## v0.3.0 (2026-10-03)
+
 - add `paystable init` with generated secrets and private configuration permissions.
 - refuse to overwrite an existing configuration.
 - run `paystable init` from the installer.
