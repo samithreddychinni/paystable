@@ -44,7 +44,7 @@ func razorpayStatus(status string) string {
 func razorpayState(w http.ResponseWriter, r *http.Request) (txnState, bool) {
 	id, secret, ok := r.BasicAuth()
 	if !ok || id != envOr("RAZORPAY_KEY_ID", "rzp_test_mock") || secret != envOr("RAZORPAY_KEY_SECRET", "test-key-secret") {
-		http.Error(w, "invalid test credentials", 401)
+		http.Error(w, "invalid test credentials", http.StatusUnauthorized)
 		return txnState{}, false
 	}
 	mu.RLock()
@@ -94,12 +94,12 @@ func fireRazorpayWebhook(w http.ResponseWriter, r *http.Request, txnID, status s
 	req.Header.Set("X-Razorpay-Event-Id", "evt_"+txnID+"_"+status)
 	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
 	if err != nil {
-		http.Error(w, "webhook request failed", 502)
+		http.Error(w, "webhook request failed", http.StatusBadGateway)
 		return
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != 200 {
-		http.Error(w, fmt.Sprintf("webhook returned HTTP %d", resp.StatusCode), 502)
+		http.Error(w, fmt.Sprintf("webhook returned HTTP %d", resp.StatusCode), http.StatusBadGateway)
 		return
 	}
 	w.WriteHeader(200)
