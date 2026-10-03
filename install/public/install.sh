@@ -15,10 +15,10 @@
   #   - darwin/amd64 (macOS intel)
   #   - darwin/arm64 (macOS apple silicon)
   #
-  # source: https://github.com/IDEA-Amrita/paystable
+  # source: https://github.com/samithreddychinni/paystable
   #
 
-  REPO="IDEA-Amrita/paystable"
+  REPO="samithreddychinni/paystable"
   BINARY="paystable"
 
   info() {
@@ -93,62 +93,52 @@
 
   info "writing instructions.md"
   cat << 'EOF' > instructions.md
-  # Paystable Quick Start Guide
-  
-  Welcome to Paystable! You have successfully installed the binary.
-  A local `.env` was created with generated secrets via `./paystable init`.
-  ## Quick Start Steps
-  
-  1. **Set up Postgres**:
-     Create a local user and database (password must match `DATABASE_URL` in
-  `.env`):
-     ```sql
-     CREATE USER paystable WITH PASSWORD 'CHANGE_ME';
-     CREATE DATABASE paystable OWNER paystable;
-     ```
-     Then edit `.env` if your password, host, or database name differ:
-     ```bash
-     nano .env
-     ```
-    If doctor reports peer/ident or other Postgres errors, run `./paystable
-    doctor` and follow the exact next command it prints.
-  
-  2. **Set PayU gateway credentials**:
-     In `.env`, fill in the TODO fields from your PayU dashboard:
-     - `GATEWAY_API_KEY`
-     - `PAYU_STATUS_URL`
-     Local secrets (`WEBHOOK_SECRET`, `MERCHANT_CALLBACK_SECRET`,
-  `ADMIN_API_KEY`,
-     `SECRET_ENCRYPTION_KEY`) were generated for you. Replace `WEBHOOK_SECRET`
-     with your real PayU salt when you integrate webhooks.
-  
-  3. **Check the setup**:
-     ```bash
-     ./paystable doctor
-     ```
-  
-  4. **Run Paystable**:
-     ```bash
-     ./paystable
-     ```
-     *Note: Paystable will automatically run database migrations on startup.*
+# Paystable quickstart
 
-  5. **Access the Ops Dashboard**:
-     Once started, open your browser and navigate to:
-     `http://localhost:8080/dashboard`
+I built Paystable to check gateway evidence before a merchant fulfills an order.
+PayU is the only supported gateway in this release.
 
-  ## Deployment & Production
+**Warning:** Do not expose the dashboard to the internet.
+Admin routes have no login.
 
-  - To install the binary globally (so you can run `paystable` from anywhere):
-    ```bash
-    sudo mv paystable /usr/local/bin/
-    ```
-  - For details on setting up systemd services, Prometheus metrics, and
-  production deployment, refer to the official documentation.
-  ## Documentation
-  For in-depth integration workflows, callback contracts, and configuration
-  options, visit:
-  https://github.com/IDEA-Amrita/paystable
+The installer ran `./paystable init` to create `.env` with local secrets.
+Do not commit `.env`.
+
+1. Create a PostgreSQL user and database.
+   Use the same password in PostgreSQL and `DATABASE_URL`.
+
+   ```sql
+   CREATE USER paystable WITH PASSWORD 'CHANGE_ME';
+   CREATE DATABASE paystable OWNER paystable;
+   ```
+
+2. Edit `.env`.
+   Set `DATABASE_URL` to match the database.
+   Set `GATEWAY_API_KEY` to the PayU test merchant key.
+   Set `WEBHOOK_SECRET` to the PayU test salt.
+   Set `PAYU_STATUS_URL` to the PayU test status endpoint.
+   Keep the generated callback, admin, and encryption secrets private.
+
+3. Check the local configuration and database.
+
+   ```bash
+   ./paystable doctor
+   ```
+
+   The command applies pending migrations.
+   Missing gateway credentials produce warnings.
+   A successful database check does not prove that PayU access works.
+
+4. Start Paystable after you set the required values.
+
+   ```bash
+   ./paystable
+   ```
+
+5. Open the local dashboard at `http://localhost:8080/dashboard`.
+
+Read the integration contract at https://github.com/samithreddychinni/paystable.
+
 EOF
 
 info "paystable ${LATEST} installed successfully"
