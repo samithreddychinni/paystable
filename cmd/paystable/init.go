@@ -53,7 +53,7 @@ func runInit(args []string) error {
 
 	okLine("wrote .env with generated local secrets")
 	infoLine("update DATABASE_URL password to match Postgres (CHANGE_ME)")
-	infoLine("set GATEWAY_API_KEY and PAYU_STATUS_URL from your PayUDashboard")
+	infoLine("select GATEWAY and set its credentials in .env")
 	infoLine("next: ./paystable doctor")
 
 	return nil

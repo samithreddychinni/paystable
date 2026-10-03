@@ -121,3 +121,23 @@ func TestMigrateFailureReleasesSession(t *testing.T) {
 		t.Fatalf("migration after failure: %v", err)
 	}
 }
+
+func TestWebhookActionableMigrationPreservesEvidence(t *testing.T) {
+	db := migrationTestDB(t)
+	if err := Migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`ALTER TABLE webhooks DROP COLUMN actionable; DELETE FROM schema_migrations WHERE version='006_webhook_actionable'; INSERT INTO webhooks (txn_id,gateway,event_type,payload) VALUES ('migration-evidence','payu','payment.success','{}')`); err != nil {
+		t.Fatal(err)
+	}
+	if err := Migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	var actionable bool
+	if err := db.QueryRow(`SELECT actionable FROM webhooks WHERE txn_id='migration-evidence'`).Scan(&actionable); err != nil {
+		t.Fatal(err)
+	}
+	if !actionable {
+		t.Fatal("existing PayU evidence became non-actionable")
+	}
+}

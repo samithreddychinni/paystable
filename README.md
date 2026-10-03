@@ -25,7 +25,7 @@ It does not replace a gateway, route payments, or reconcile bank statements.
 | Gateway | Status |
 |---|---|
 | PayU | Supported. The adapter verifies response hashes and calls the payment status API. |
-| Razorpay | In progress. No adapter exists in this release. |
+| Razorpay | Supported from source. Requires auto-capture. The v0.3.0 binaries support PayU only. |
 | Cashfree | Not supported. No adapter exists. |
 
 ## quickstart
@@ -41,11 +41,13 @@ The installer checks the binary against the release checksums.
 It runs `paystable init` to create the configuration with local secrets.
 The command refuses to overwrite an existing configuration.
 
+For Razorpay, use a source build.
+The v0.3.0 release binaries support PayU only.
 For a source build, install Go 1.23 or later.
 Clone the repository:
 
 ```bash
-git clone --branch v0.3.0 https://github.com/samithreddychinni/paystable.git
+git clone --branch main https://github.com/samithreddychinni/paystable.git
 cd paystable
 go build -o paystable ./cmd/paystable
 ./paystable init
@@ -54,6 +56,7 @@ go build -o paystable ./cmd/paystable
 Set the database password in `.env` to match your PostgreSQL user.
 Replace `WEBHOOK_SECRET` with the PayU test salt.
 Set `GATEWAY_API_KEY` and `PAYU_STATUS_URL` for PayU test mode.
+For Razorpay, use the configuration section below instead of the PayU fields.
 
 Create a local database:
 
@@ -314,10 +317,12 @@ Required:
 | Variable | Purpose |
 |---|---|
 | `DATABASE_URL` | PostgreSQL connection string. |
-| `GATEWAY` | Active gateway. Current adapter: `payu`. |
+| `GATEWAY` | Active gateway: `payu` or `razorpay`. |
 | `WEBHOOK_SECRET` | Gateway webhook secret. For PayU, use the salt. |
-| `GATEWAY_API_KEY` | Gateway credential. For PayU this is the merchant key. |
-| `PAYU_STATUS_URL` | PayU status API endpoint. |
+| `GATEWAY_API_KEY` | PayU merchant key. Required for `payu`. |
+| `PAYU_STATUS_URL` | PayU status API endpoint. Required for `payu`. |
+| `RAZORPAY_KEY_ID` | Razorpay key ID. Required for `razorpay`. |
+| `RAZORPAY_KEY_SECRET` | Razorpay key secret. Required for `razorpay`. |
 | `MERCHANT_CALLBACK_SECRET` | Secret that signs callbacks to your app. |
 | `ADMIN_API_KEY` | Bearer token for hold creation and backend status reads. |
 
@@ -325,6 +330,7 @@ Optional:
 
 | Variable | Default | Purpose |
 |---|---:|---|
+| `RAZORPAY_API_URL` | `https://api.razorpay.com/v1` | Razorpay API endpoint. |
 | `PORT` | `8080` | HTTP port. |
 | `STABILIZATION_N` | `3` | Consecutive matching polls required for terminal success/failure. |
 | `MAX_BACKOFF_S` | `160` | Legacy cap used by older scheduler paths. |
@@ -334,6 +340,23 @@ Optional:
 | `DELIVERY_ALLOW_INSECURE_CALLBACK` | `false` | Allows `http://` callbacks for local development only. |
 | `SECRET_ENCRYPTION_KEY` | empty | Required for encrypted webhook secret rotation. |
 | `LOG_LEVEL` | `info` | Log level. |
+
+For Razorpay, set `GATEWAY=razorpay` and enable auto-capture in the gateway dashboard.
+Set `WEBHOOK_SECRET` to the Razorpay webhook secret.
+Use the Razorpay `order_id` as the hold `txn_id`.
+Keep the merchant order ID in the hold metadata and the gateway receipt.
+Paystable checks all payment attempts for that order.
+
+A failed attempt stays pending before expiry.
+At expiry, all failed attempts or no attempts produce `FAILED`.
+A created or authorized attempt produces `INDETERMINATE`.
+A captured payment and paid order produce `CONFIRMED` when the amount matches.
+
+A different amount or partial payment produces `MISMATCH`.
+A refund before confirmation produces `INDETERMINATE`.
+A late capture after `FAILED` creates a ledger event and an alert without a state change.
+
+Read the [Razorpay guide](docs-site/src/content/docs/guides/razorpay.md) for the event and configuration details.
 
 ---
 

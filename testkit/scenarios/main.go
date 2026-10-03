@@ -19,11 +19,15 @@ var (
 func main() {
 	if len(os.Args) < 2 {
 		fmt.Println("usage: scenarios <scenario>")
-		fmt.Println("scenarios: happy-path | false-failure | genuine-failure | amount-mismatch | merchant-offline | duplicate-webhook")
+		fmt.Println("scenarios: happy-path | false-failure | genuine-failure | amount-mismatch | merchant-offline | duplicate-webhook | razorpay-success | razorpay-failed-webhook")
 		os.Exit(1)
 	}
 
 	switch os.Args[1] {
+	case "razorpay-success":
+		razorpaySuccess(false)
+	case "razorpay-failed-webhook":
+		razorpaySuccess(true)
 	case "happy-path":
 		happyPath()
 	case "false-failure":
@@ -103,7 +107,7 @@ func amountMismatch() {
 	log("3. gateway fires success webhook")
 	fireWebhook(txnID, "success")
 
-	log("4. polling status (expect INDETERMINATE, not CONFIRMED)")
+	log("4. polling status (expect MISMATCH)")
 	pollUntilTerminal(txnID)
 }
 
@@ -151,17 +155,20 @@ func duplicateWebhook() {
 func createHold(txnID string, amount int64) {
 	body := map[string]interface{}{
 		"txn_id":       txnID,
-		"gateway":      "payu",
+		"gateway":      envOr("GATEWAY", "payu"),
 		"amount":       amount,
 		"currency":     "INR",
 		"ttl_seconds":  300,
-		"callback_url": envOr("MERCHANT_URL", "http://localhost:9091") + "/callback",
+		"callback_url": envOr("MERCHANT_CALLBACK_URL", "http://merchant:9091/callback"),
 		"metadata":     map[string]string{"scenario": txnID},
 	}
 	resp := postJSON(paystableURL+"/api/v1/hold", body, map[string]string{
 		"Authorization": "Bearer " + adminKey,
 	})
-	log("   hold created: %s", resp)
+	if resp == "" {
+		os.Exit(1)
+	}
+	log("   hold created: %s", txnID)
 }
 
 func script(txnID, status string, amount float64, failUntilS int) {
@@ -183,26 +190,31 @@ func fireWebhook(txnID, status string) {
 	}, nil)
 }
 
-func pollUntilTerminal(txnID string) {
+func pollUntilTerminal(txnID string) string {
 	start := time.Now()
 	for {
 		time.Sleep(3 * time.Second)
 		status := getStatus(txnID)
 		elapsed := time.Since(start).Round(time.Second)
 		log("   [%s] status: %s", elapsed, status)
-		if status == "CONFIRMED" || status == "FAILED" || status == "INDETERMINATE" {
+		if status == "CONFIRMED" || status == "FAILED" || status == "INDETERMINATE" || status == "MISMATCH" {
 			log("   terminal state reached: %s", status)
-			return
+			return status
 		}
 		if time.Since(start) > 5*time.Minute {
 			log("   timed out waiting for terminal state")
-			return
+			return "timeout"
 		}
 	}
 }
 
 func getStatus(txnID string) string {
-	resp, err := http.Get(paystableURL + "/api/v1/transactions/" + txnID + "/status?token=skip")
+	req, err := http.NewRequest("GET", paystableURL+"/api/v1/transactions/"+txnID+"/status", nil)
+	if err != nil {
+		return "request error"
+	}
+	req.Header.Set("Authorization", "Bearer "+adminKey)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return "error: " + err.Error()
 	}
@@ -256,4 +268,23 @@ func envOr(k, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func razorpaySuccess(failedWebhook bool) {
+	if envOr("GATEWAY", "payu") != "razorpay" {
+		log("Set GATEWAY=razorpay for this scenario.")
+		os.Exit(1)
+	}
+	txnID := fmt.Sprintf("order_%d", time.Now().UnixNano())
+	createHold(txnID, 49900)
+	script(txnID, "captured", 49900, 0)
+	status := "captured"
+	if failedWebhook {
+		status = "failed"
+	}
+	fireWebhook(txnID, status)
+	if got := pollUntilTerminal(txnID); got != "CONFIRMED" {
+		log("expected CONFIRMED, got %s", got)
+		os.Exit(1)
+	}
 }
