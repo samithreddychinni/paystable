@@ -4,6 +4,9 @@
 # Environment
 .env
 .env.testkit
+*-key.csv
+*.pem
+*.key
 
 # IDE
 .idea/
@@ -47,3 +50,8 @@ dashboard/.vite/
 /scenarios
 /docs/developer-guide.md
 /docs/product-gap-analysis.md
+
+# Local build and verification output
+/artifacts/
+/bin/
+/docs/evidence/
