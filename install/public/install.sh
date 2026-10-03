@@ -95,7 +95,7 @@
   cat << 'EOF' > instructions.md
 # Paystable quickstart
 
-I built Paystable to check gateway evidence before a merchant fulfills an order.
+Paystable checks gateway evidence before a merchant fulfills an order.
 PayU is the only supported gateway in this release.
 
 **Warning:** Do not expose the dashboard to the internet.
