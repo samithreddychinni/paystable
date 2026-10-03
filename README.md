@@ -1,4 +1,4 @@
-# Paystable
+# paystable
 
 [![CI](https://github.com/samithreddychinni/paystable/actions/workflows/ci.yml/badge.svg)](https://github.com/samithreddychinni/paystable/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/samithreddychinni/paystable)](https://github.com/samithreddychinni/paystable/releases/latest)
@@ -8,7 +8,7 @@ The gateway sends `failed`, so the app releases the seat.
 The bank debit succeeds later, but another customer now owns the seat.
 Support receives a complaint about the missing ticket.
 
-I built Paystable to check gateway evidence before a merchant acts on a payment result.
+Paystable checks gateway evidence before a merchant acts on a payment result.
 Paystable runs as one Go binary with PostgreSQL between the gateway and the merchant's fulfillment.
 
 - Paystable verifies and stores gateway webhooks.
@@ -20,17 +20,28 @@ Paystable runs as one Go binary with PostgreSQL between the gateway and the merc
 Paystable is early.
 It does not replace a gateway, route payments, or reconcile bank statements.
 
-## Which gateways work today
+## which gateways work today
 
 | Gateway | Status |
 |---|---|
 | PayU | Supported. The adapter verifies response hashes and calls the payment status API. |
-| Razorpay | In progress in the project plan. No adapter exists in this release. |
+| Razorpay | In progress. No adapter exists in this release. |
 | Cashfree | Not supported. No adapter exists. |
 
 ## quickstart
 
-Install Go 1.23 or later and PostgreSQL before this source build.
+Install the latest release:
+
+```bash
+curl -fsSL https://paystable.vercel.app | sh
+cd paystable
+```
+
+The installer checks the binary against the release checksums.
+It runs `paystable init` to create the configuration with local secrets.
+The command refuses to overwrite an existing configuration.
+
+For a source build, install Go 1.23 or later.
 Clone the repository:
 
 ```bash
@@ -39,21 +50,6 @@ cd paystable
 go build -o paystable ./cmd/paystable
 ./paystable init
 ```
-
-The command creates `.env` with local secrets.
-It refuses to overwrite an existing `.env`.
-
-The latest release, `v0.2.4`, does not contain `init`.
-The installer source uses `init`, so its release path needs v0.3.0 before it works.
-After v0.3.0 and the installer update reach the public site, use:
-
-```bash
-curl -fsSL https://paystable.vercel.app | sh
-cd paystable
-```
-
-The installer checks the binary against the release `checksums.txt`.
-It then runs `./paystable init`.
 
 Set the database password in `.env` to match your PostgreSQL user.
 Replace `WEBHOOK_SECRET` with the PayU test salt.
@@ -356,13 +352,13 @@ During the rotation window, Paystable accepts webhooks with the old or new secre
 
 ---
 
-## FAQ
+## faq
 
 ### Why not only verify the webhook signature?
 
 A valid signature proves who sent the event.
 It does not prove that the event is final or correct.
-I use gateway status checks and amount checks before Paystable sends a final callback.
+Paystable checks gateway status and amount before it sends a final callback.
 A gateway API can also lag.
 Paystable cannot guarantee that a later gateway result will never change.
 
