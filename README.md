@@ -45,7 +45,7 @@ For a source build, install Go 1.23 or later.
 Clone the repository:
 
 ```bash
-git clone https://github.com/samithreddychinni/paystable.git
+git clone --branch v0.3.0 https://github.com/samithreddychinni/paystable.git
 cd paystable
 go build -o paystable ./cmd/paystable
 ./paystable init
