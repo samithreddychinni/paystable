@@ -21,6 +21,9 @@ paystable:    http://localhost:8080
 mock gateway: http://localhost:9090  
 mock merchant: http://localhost:9091  
 
+The scenarios send callbacks to `http://merchant:9091/callback` inside the stack.
+Set `MERCHANT_CALLBACK_URL` to use a different callback endpoint.
+
 ## run a scenario
 
 ```bash
@@ -57,3 +60,17 @@ curl -X POST http://localhost:9091/toggle-offline
 ```
 
 call again to bring it back online.
+
+## Razorpay
+
+Use the same stack for Razorpay tests:
+
+```bash
+GATEWAY=razorpay docker compose -f docker-compose.testkit.yml --env-file .env.testkit up --build
+GATEWAY=razorpay go run ./testkit/scenarios razorpay-success
+GATEWAY=razorpay go run ./testkit/scenarios razorpay-failed-webhook
+```
+
+The mock API uses test credentials and integer paise amounts.
+The second scenario sends a failed webhook while the status API returns a captured payment.
+Both scenarios require `CONFIRMED`.

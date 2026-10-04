@@ -1,6 +1,7 @@
 package database
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"net/url"
@@ -95,12 +96,24 @@ func TestMigrateConcurrent(t *testing.T) {
 			t.Errorf("migration %s recorded %d times", version, count)
 		}
 	}
-	var available bool
-	if err := db.QueryRow("SELECT pg_try_advisory_lock($1)", migrationLockID).Scan(&available); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	probe, err := sql.Open("postgres", os.Getenv("DATABASE_URL"))
+	if err != nil {
 		t.Fatal(err)
 	}
-	if !available {
-		t.Fatal("migration lock remains held")
+	defer func() { _ = probe.Close() }()
+	conn, err := probe.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+	// Use a new session; another package can migrate this database.
+	if _, err := conn.ExecContext(ctx, "SELECT pg_advisory_lock($1)", migrationLockID); err != nil {
+		t.Fatalf("migration lock was not released: %v", err)
+	}
+	if _, err := conn.ExecContext(ctx, "SELECT pg_advisory_unlock($1)", migrationLockID); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -119,5 +132,25 @@ func TestMigrateFailureReleasesSession(t *testing.T) {
 	}
 	if err := Migrate(db); err != nil {
 		t.Fatalf("migration after failure: %v", err)
+	}
+}
+
+func TestWebhookActionableMigrationPreservesEvidence(t *testing.T) {
+	db := migrationTestDB(t)
+	if err := Migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`ALTER TABLE webhooks DROP COLUMN actionable; DELETE FROM schema_migrations WHERE version='006_webhook_actionable'; INSERT INTO webhooks (txn_id,gateway,event_type,payload) VALUES ('migration-evidence','payu','payment.success','{}')`); err != nil {
+		t.Fatal(err)
+	}
+	if err := Migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	var actionable bool
+	if err := db.QueryRow(`SELECT actionable FROM webhooks WHERE txn_id='migration-evidence'`).Scan(&actionable); err != nil {
+		t.Fatal(err)
+	}
+	if !actionable {
+		t.Fatal("existing PayU evidence became non-actionable")
 	}
 }

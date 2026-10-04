@@ -38,16 +38,17 @@ func RunTTLScanner(ctx context.Context, db *sql.DB, cfg *config.Config, clientFa
 }
 
 type expiredHold struct {
-	TxnID   string
-	Gateway string
-	Amount  int64
+	TxnID    string
+	Gateway  string
+	Amount   int64
+	Currency string
 }
 
 // claimExpiredHolds returns non-terminal holds past their expires_at. SKIP LOCKED
 // keeps multiple instances from grabbing the same row.
 func claimExpiredHolds(ctx context.Context, db *sql.DB) ([]expiredHold, error) {
 	rows, err := db.QueryContext(ctx, `
-		SELECT txn_id, gateway, amount
+		SELECT txn_id, gateway, amount, currency
 		FROM holds
 		WHERE status IN ('PENDING','VERIFYING') AND expires_at <= now()
 		ORDER BY expires_at
@@ -63,7 +64,7 @@ func claimExpiredHolds(ctx context.Context, db *sql.DB) ([]expiredHold, error) {
 	var out []expiredHold
 	for rows.Next() {
 		var h expiredHold
-		if err := rows.Scan(&h.TxnID, &h.Gateway, &h.Amount); err != nil {
+		if err := rows.Scan(&h.TxnID, &h.Gateway, &h.Amount, &h.Currency); err != nil {
 			slog.Error("ttl scanner: scan failed", "error", err)
 			continue
 		}
@@ -84,6 +85,12 @@ func resolveExpiredHold(ctx context.Context, db *sql.DB, h expiredHold, clientFa
 		return
 	}
 
+	if gateway.WaitForExpiry(client) && h.Currency != "" && h.Currency != "INR" {
+		if err := markHoldIndeterminateReason(ctx, db, h.TxnID, "unsupported_currency", 0, h.Amount); err != nil {
+			slog.Error("ttl scanner: currency review failed", "error", err)
+		}
+		return
+	}
 	cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	status, amount, _, err := client.Status(cctx, h.TxnID)
@@ -96,6 +103,14 @@ func resolveExpiredHold(ctx context.Context, db *sql.DB, h expiredHold, clientFa
 	}
 
 	switch {
+	case status == "mismatch":
+		if err := markHoldMismatch(ctx, db, h.TxnID, amount, h.Amount); err != nil {
+			slog.Error("ttl scanner: mark partial payment", "error", err)
+		}
+	case status == "indeterminate":
+		if err := markHoldIndeterminateReason(ctx, db, h.TxnID, "gateway_requires_review", amount, h.Amount); err != nil {
+			slog.Error("ttl scanner: mark refund review", "error", err)
+		}
 	case isSuccessStatus(status) && amount == h.Amount:
 		if err := finalizeHold(ctx, db, h.TxnID); err != nil {
 			slog.Error("ttl scanner: finalize", "error", err, "txn", h.TxnID)

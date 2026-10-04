@@ -4,27 +4,29 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net"
 	"net/http"
-	"net/url"
-	"strconv"
 	"time"
 
 	"github.com/IDEA-Amrita/paystable/internal/config"
+	gatewaypkg "github.com/IDEA-Amrita/paystable/internal/gateway"
+	"github.com/IDEA-Amrita/paystable/internal/gateway/adapters"
 	"github.com/IDEA-Amrita/paystable/internal/gateway/payu"
 	"github.com/IDEA-Amrita/paystable/internal/metrics"
 	"github.com/IDEA-Amrita/paystable/internal/secrets"
 )
 
 type Handler struct {
-	db  *sql.DB
-	cfg *config.Config
+	db       *sql.DB
+	cfg      *config.Config
+	adapters map[string]gatewaypkg.Adapter
 }
 
 func NewHandler(db *sql.DB, cfg *config.Config) *Handler {
-	return &Handler{db: db, cfg: cfg}
+	return &Handler{db: db, cfg: cfg, adapters: adapters.New(cfg)}
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -34,39 +36,44 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	body, err := io.ReadAll(io.LimitReader(r.Body, (1<<20)+1))
 	if err != nil {
 		http.Error(w, "read error", http.StatusBadRequest)
 		return
 	}
 
-	params, err := parsePayload(body, r.Header.Get("Content-Type"))
+	if len(body) > 1<<20 {
+		http.Error(w, "webhook body exceeds the size limit", http.StatusRequestEntityTooLarge)
+		return
+	}
+	adapter := h.adapters[gateway]
+	if adapter == nil || (h.cfg.Gateway != "" && gateway != h.cfg.Gateway) {
+		http.Error(w, "gateway is not active", http.StatusBadRequest)
+		return
+	}
+	if err := h.verify(r.Context(), gateway, adapter, body, r.Header); err != nil {
+		reason := "hmac_mismatch"
+		if errors.Is(err, gatewaypkg.ErrMalformedWebhook) {
+			reason = "malformed_payload"
+		} else {
+			metrics.WebhookHMACFailures.Inc()
+		}
+		h.quarantine(gateway, reason, r, body)
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	event, err := adapter.ParseWebhook(body, r.Header)
 	if err != nil {
 		h.quarantine(gateway, "malformed_payload", r, body)
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-
-	if !h.verify(r.Context(), gateway, params) {
-		h.quarantine(gateway, "hmac_mismatch", r, body)
-		metrics.WebhookHMACFailures.Inc()
+	if event.Timestamp != 0 && time.Since(time.Unix(event.Timestamp, 0)) > 5*time.Minute {
+		h.quarantine(gateway, "replay_attack", r, body)
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-
-	// Timestamp replay protection
-	if ts := params["timestamp"]; ts != "" {
-		if t, err := strconv.ParseInt(ts, 10, 64); err == nil {
-			age := time.Since(time.Unix(t, 0))
-			if age > 5*time.Minute {
-				h.quarantine(gateway, "replay_attack", r, body)
-				w.WriteHeader(http.StatusOK)
-				return
-			}
-		}
-	}
-
-	if err := h.persist(gateway, params); err != nil {
+	if err := h.persist(gateway, event); err != nil {
 		slog.Error("failed to persist webhook", "error", err, "gateway", gateway)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
@@ -75,23 +82,18 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func (h *Handler) verify(ctx context.Context, gateway string, params map[string]string) bool {
-	candidates := h.activeSecrets(ctx, gateway)
+func (h *Handler) verify(ctx context.Context, name string, adapter gatewaypkg.Adapter, body []byte, headers http.Header) error {
+	candidates := h.activeSecrets(ctx, name)
 	if len(candidates) == 0 && h.cfg.WebhookSecret != "" {
 		candidates = append(candidates, h.cfg.WebhookSecret)
 	}
-
-	switch gateway {
-	case "payu":
-		for _, secret := range candidates {
-			if payu.VerifyResponseHash(params, secret) {
-				return true
-			}
+	for _, secret := range candidates {
+		err := adapter.VerifyWebhook(body, headers, secret)
+		if err == nil || errors.Is(err, gatewaypkg.ErrMalformedWebhook) {
+			return err
 		}
-		return false
-	default:
-		return false
 	}
+	return gatewaypkg.ErrSignature
 }
 
 func (h *Handler) activeSecrets(ctx context.Context, gateway string) []string {
@@ -133,36 +135,33 @@ func (h *Handler) activeSecrets(ctx context.Context, gateway string) []string {
 	return out
 }
 
-func (h *Handler) persist(gateway string, params map[string]string) error {
-	txnID := extractTxnID(gateway, params)
-	eventType := extractEventType(gateway, params)
-	gatewayEventID := params["mihpayid"]
-
-	payload, _ := json.Marshal(params)
-
+func (h *Handler) persist(name string, event gatewaypkg.Webhook) error {
+	tx, err := h.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, event.TxnID); err != nil {
+		return err
+	}
 	var insertedID int64
-	err := h.db.QueryRow(`
-		INSERT INTO webhooks (txn_id, gateway, gateway_event_id, event_type, payload)
-		VALUES ($1, $2, NULLIF($3, ''), $4, $5::jsonb)
-		ON CONFLICT (gateway, gateway_event_id) DO NOTHING
-		RETURNING id`,
-		txnID, gateway, gatewayEventID, eventType, payload).Scan(&insertedID)
-
+	err = tx.QueryRow(`INSERT INTO webhooks (txn_id,gateway,gateway_event_id,event_type,payload,actionable)
+	 VALUES ($1,$2,NULLIF($3,''),$4,$5::jsonb,$6)
+	 ON CONFLICT (gateway,gateway_event_id) DO NOTHING RETURNING id`, event.TxnID, name, event.EventID, event.EventType, event.Payload, event.Actionable).Scan(&insertedID)
 	if err == sql.ErrNoRows {
-		slog.Info("duplicate webhook ignored", "gateway", gateway, "txn_id", txnID, "event", eventType)
-		return nil
+		return tx.Commit()
 	}
 	if err != nil {
 		return err
 	}
-
-	if _, err := h.db.Exec(`INSERT INTO verification_polls (txn_id, attempt_number, scheduled_at, status)
-		SELECT $1, 1, now(), 'pending' WHERE EXISTS (SELECT 1 FROM holds WHERE txn_id = $1)`, txnID); err != nil {
-		slog.Warn("enqueue verification poll after webhook failed", "txn_id", txnID, "error", err)
+	if event.Actionable {
+		_, err = tx.Exec(`INSERT INTO verification_polls (txn_id,attempt_number,scheduled_at,status)
+		 SELECT $1,1,now(),'pending' WHERE EXISTS (SELECT 1 FROM holds WHERE txn_id=$1 AND gateway=$2)`, event.TxnID, name)
+		if err != nil {
+			return err
+		}
 	}
-
-	slog.Info("webhook persisted", "gateway", gateway, "txn_id", txnID, "event", eventType)
-	return nil
+	return tx.Commit()
 }
 
 func (h *Handler) quarantine(gateway, reason string, r *http.Request, body []byte) {
@@ -181,43 +180,6 @@ func (h *Handler) quarantine(gateway, reason string, r *http.Request, body []byt
 	}
 }
 
-func extractTxnID(gateway string, params map[string]string) string {
-	switch gateway {
-	case "payu":
-		return params["txnid"]
-	default:
-		return params["txnid"]
-	}
-}
-
-func extractEventType(gateway string, params map[string]string) string {
-	switch gateway {
-	case "payu":
-		return "payment." + params["status"]
-	default:
-		return "unknown"
-	}
-}
-
 func parsePayload(body []byte, contentType string) (map[string]string, error) {
-	params := make(map[string]string)
-
-	if contentType == "application/json" || (len(body) > 0 && body[0] == '{') {
-		if err := json.Unmarshal(body, &params); err != nil {
-			return nil, err
-		}
-		return params, nil
-	}
-
-	//payu sends application/x-www-form-urlencoded
-	values, err := url.ParseQuery(string(body))
-	if err != nil {
-		return nil, err
-	}
-	for k, v := range values {
-		if len(v) > 0 {
-			params[k] = v[0]
-		}
-	}
-	return params, nil
+	return payu.ParsePayload(body, contentType)
 }

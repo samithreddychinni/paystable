@@ -35,6 +35,8 @@ func main() {
 	port := envOr("PORT", "9090")
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /script", handleScript)
+	mux.HandleFunc("GET /v1/orders/{id}", handleRazorpayOrder)
+	mux.HandleFunc("GET /v1/orders/{id}/payments", handleRazorpayPayments)
 	mux.HandleFunc("POST /fire-webhook", handleFireWebhook)
 	mux.HandleFunc("GET /merchant/postservice.php", handleStatus)
 	mux.HandleFunc("POST /merchant/postservice.php", handleStatus)
@@ -91,6 +93,10 @@ func handleFireWebhook(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "txn not scripted", http.StatusNotFound)
 		return
 	}
+	if envOr("GATEWAY", "payu") == "razorpay" {
+		fireRazorpayWebhook(w, r, req.TxnID, req.Status, s)
+		return
+	}
 	params := map[string]string{
 		"key": gkey, "txnid": req.TxnID,
 		"amount":      fmt.Sprintf("%.2f", s.Amount/100),
@@ -133,8 +139,8 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 	if !ok || txnID == "" {
 		slog.Info("status polled", "txn_id", txnID, "returning", "not_found")
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"status": 0,
-			"msg":    "No transaction found",
+			"status":              0,
+			"msg":                 "No transaction found",
 			"transaction_details": map[string]interface{}{},
 		})
 		return

@@ -17,7 +17,7 @@ import (
 	"github.com/IDEA-Amrita/paystable/internal/database"
 	"github.com/IDEA-Amrita/paystable/internal/delivery"
 	"github.com/IDEA-Amrita/paystable/internal/gateway"
-	"github.com/IDEA-Amrita/paystable/internal/gateway/payu"
+	"github.com/IDEA-Amrita/paystable/internal/gateway/adapters"
 	"github.com/IDEA-Amrita/paystable/internal/hold"
 	"github.com/IDEA-Amrita/paystable/internal/sse"
 	"github.com/IDEA-Amrita/paystable/internal/stabilizer"
@@ -59,12 +59,12 @@ func main() {
 	holdHandler := hold.NewHandler(holdStore, cfg.HoldMaxTTLS, cfg.AdminAPIKey)
 
 	lag := stabilizer.NewLagEstimator()
-	payuClient := payu.NewClient(cfg.PayuStatusURL, cfg.GatewayAPIKey, cfg.WebhookSecret)
+	clients := adapters.New(cfg)
 	gatewayFactory := func(g string) gateway.GatewayClient {
-		if g == "payu" {
-			return payuClient
+		if g != cfg.Gateway {
+			return nil
 		}
-		return nil
+		return clients[g]
 	}
 
 	go stabilizer.Run(ctx, db, cfg, lag, gatewayFactory)

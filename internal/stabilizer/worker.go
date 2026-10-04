@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/rand"
 	"strings"
@@ -172,6 +173,18 @@ func processPoll(ctx context.Context, db *sql.DB, cfg *config.Config, lag *LagEs
 		}
 		return
 	}
+	if gateway.WaitForExpiry(client) {
+		var currency string
+		if err := db.QueryRowContext(ctx, `SELECT currency FROM holds WHERE txn_id=$1`, p.TxnID).Scan(&currency); err != nil {
+			return
+		}
+		if currency != "INR" {
+			if err := markHoldIndeterminateReason(ctx, db, p.TxnID, "unsupported_currency", 0, p.HoldAmount); err != nil {
+				slog.Error("currency review failed", "error", err)
+			}
+			return
+		}
+	}
 	// D)Call the external gateway
 	cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
@@ -181,6 +194,12 @@ func processPoll(ctx context.Context, db *sql.DB, cfg *config.Config, lag *LagEs
 	if err != nil {
 		if _, err2 := db.ExecContext(ctx, `UPDATE verification_polls SET status='failed', error=$1, completed_at=now() WHERE id=$2`, err.Error(), p.ID); err2 != nil {
 			slog.Error("update poll failed status failed", "error", err2, "id", p.ID)
+		}
+		if errors.Is(err, gateway.ErrTransient) && gateway.WaitForExpiry(client) {
+			if err := scheduleUntilExpiry(ctx, db, p.TxnID, p.Attempt); err != nil {
+				slog.Error("schedule transient retry failed", "error", err)
+			}
+			return
 		}
 		if p.Attempt < cfg.StabilizationN {
 			if err3 := scheduleNextPoll(ctx, db, lag, p); err3 != nil {
@@ -201,6 +220,35 @@ func processPoll(ctx context.Context, db *sql.DB, cfg *config.Config, lag *LagEs
 	}
 	if _, err := db.ExecContext(ctx, `UPDATE verification_polls SET gateway_status=$1, gateway_amount=$2, raw_response=$3, completed_at=now(), status='completed' WHERE id=$4`, gatewayStatus, gatewayAmount, rawJSON, p.ID); err != nil {
 		slog.Error("update poll success failed", "error", err, "id", p.ID)
+		return
+	}
+
+	if observer, ok := client.(gateway.CaptureObserver); ok && observer.CaptureObserved(raw) {
+		late, err := recordLateCapture(ctx, db, p.TxnID, gatewayAmount, raw)
+		if err != nil {
+			slog.Error("record late capture failed", "error", err)
+			return
+		}
+		if late {
+			return
+		}
+	}
+	if gatewayStatus == "mismatch" {
+		if err := markHoldMismatch(ctx, db, p.TxnID, gatewayAmount, p.HoldAmount); err != nil {
+			slog.Error("mark mismatch failed", "error", err)
+		}
+		return
+	}
+	if gatewayStatus == "indeterminate" {
+		if err := markHoldIndeterminateReason(ctx, db, p.TxnID, "gateway_requires_review", gatewayAmount, p.HoldAmount); err != nil {
+			slog.Error("mark review failed", "error", err)
+		}
+		return
+	}
+	if gateway.WaitForExpiry(client) && !isSuccessStatus(gatewayStatus) {
+		if err := scheduleUntilExpiry(ctx, db, p.TxnID, p.Attempt); err != nil {
+			slog.Error("schedule order retry failed", "error", err)
+		}
 		return
 	}
 
@@ -517,4 +565,50 @@ func finalizeHold(ctx context.Context, db *sql.DB, txnID string) error {
 		return err
 	}
 	return tx.Commit()
+}
+
+func scheduleUntilExpiry(ctx context.Context, db *sql.DB, txnID string, attempt int) error {
+	_, err := db.ExecContext(ctx, `INSERT INTO verification_polls (txn_id,attempt_number,scheduled_at,status)
+	 SELECT txn_id,$2,LEAST(expires_at,now()+interval '10 seconds'),'pending'
+	 FROM holds WHERE txn_id=$1 AND status IN ('PENDING','VERIFYING') AND expires_at > now()`, txnID, attempt+1)
+	return err
+}
+
+func recordLateCapture(ctx context.Context, db *sql.DB, txnID string, amount int64, raw json.RawMessage) (bool, error) {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	h, err := loadHoldForUpdate(ctx, tx, txnID)
+	if err != nil {
+		return false, err
+	}
+	if h.Status != "FAILED" {
+		return false, tx.Commit()
+	}
+	if raw == nil {
+		raw = json.RawMessage(`{}`)
+	}
+	detail, err := json.Marshal(map[string]any{"gateway_amount": amount, "evidence": raw})
+	if err != nil {
+		return true, err
+	}
+	result, err := tx.ExecContext(ctx, `INSERT INTO ledger (txn_id,event_type,source,from_status,to_status,detail)
+	 SELECT $1,'late_capture','stabilizer','FAILED','FAILED',$2::jsonb
+	 WHERE NOT EXISTS (SELECT 1 FROM ledger WHERE txn_id=$1 AND event_type='late_capture')`, txnID, detail)
+	if err != nil {
+		return true, err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return true, err
+	}
+	if err := tx.Commit(); err != nil {
+		return true, err
+	}
+	if rows > 0 {
+		alert.New().Send(ctx, alert.Error, fmt.Sprintf("transaction %s captured after FAILED; manual review is required", txnID))
+	}
+	return true, nil
 }
