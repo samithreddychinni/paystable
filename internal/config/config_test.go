@@ -160,3 +160,28 @@ func TestLoad_SingleMissingRequired(t *testing.T) {
 		t.Fatal("expected error when GATEWAY_API_KEY is missing")
 	}
 }
+
+func TestLoadRazorpayCredentials(t *testing.T) {
+	clearAllEnvs(t)
+	setRequiredEnvs(t)
+	t.Setenv("GATEWAY", "razorpay")
+	t.Setenv("GATEWAY_API_KEY", "")
+	t.Setenv("PAYU_STATUS_URL", "")
+	t.Setenv("RAZORPAY_KEY_ID", "rzp_test_key")
+	t.Setenv("RAZORPAY_KEY_SECRET", "test-key-secret")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.RazorpayAPIURL != "https://api.razorpay.com/v1" {
+		t.Fatal("incorrect Razorpay default URL")
+	}
+	t.Setenv("RAZORPAY_KEY_SECRET", "")
+	if _, err := Load(); err == nil {
+		t.Fatal("missing key secret accepted")
+	}
+	t.Setenv("GATEWAY", "unknown")
+	if _, err := Load(); err == nil {
+		t.Fatal("unknown gateway accepted")
+	}
+}

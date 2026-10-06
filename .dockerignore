@@ -12,3 +12,12 @@ dashboard/dist
 dashboard/.vite
 docs-site
 *.log
+*-key.csv
+*.pem
+*.key
+artifacts
+bin
+pitch-video
+docs/evidence
+.local
+scripts/clean-install-evidence.sh

@@ -18,6 +18,9 @@ services:
       context: .
       dockerfile: testkit/mockgateway/Dockerfile
     environment:
+      GATEWAY: ${GATEWAY:-payu}
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-rzp_test_mock}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-test-key-secret}
       GATEWAY_KEY: ${GATEWAY_KEY}
       GATEWAY_SALT: ${GATEWAY_SALT}
       PAYSTABLE_URL: http://paystable:8080
@@ -40,7 +43,10 @@ services:
       dockerfile: Dockerfile
     environment:
       DATABASE_URL: postgres://paystable:paystable@postgres:5432/paystable?sslmode=disable
-      GATEWAY: payu
+      GATEWAY: ${GATEWAY:-payu}
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-rzp_test_mock}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-test-key-secret}
+      RAZORPAY_API_URL: http://mockgateway:9090/v1
       WEBHOOK_SECRET: ${GATEWAY_SALT}
       GATEWAY_API_KEY: ${GATEWAY_KEY}
       PAYU_STATUS_URL: http://mockgateway:9090/merchant/postservice.php

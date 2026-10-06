@@ -15,6 +15,9 @@ type Config struct {
 	WebhookSecret          string
 	GatewayAPIKey          string
 	PayuStatusURL          string
+	RazorpayKeyID          string
+	RazorpayKeySecret      string
+	RazorpayAPIURL         string
 	MerchantCallbackSecret string
 	AdminAPIKey            string
 	SecretEncryptionKey    string
@@ -37,6 +40,7 @@ func Load() (*Config, error) {
 	loadDotEnv()
 
 	c := &Config{
+		RazorpayAPIURL:        envOr("RAZORPAY_API_URL", "https://api.razorpay.com/v1"),
 		Port:                  envOr("PORT", "8080"),
 		StabilizationN:        envIntOr("STABILIZATION_N", 3),
 		MaxBackoffS:           envIntOr("MAX_BACKOFF_S", 160),
@@ -65,8 +69,6 @@ func Load() (*Config, error) {
 		"DATABASE_URL":             &c.DatabaseURL,
 		"GATEWAY":                  &c.Gateway,
 		"WEBHOOK_SECRET":           &c.WebhookSecret,
-		"GATEWAY_API_KEY":          &c.GatewayAPIKey,
-		"PAYU_STATUS_URL":          &c.PayuStatusURL,
 		"MERCHANT_CALLBACK_SECRET": &c.MerchantCallbackSecret,
 		"ADMIN_API_KEY":            &c.AdminAPIKey,
 	}
@@ -79,6 +81,18 @@ func Load() (*Config, error) {
 		*ptr = val
 	}
 
+	fields := map[string]*string{"GATEWAY_API_KEY": &c.GatewayAPIKey, "PAYU_STATUS_URL": &c.PayuStatusURL, "RAZORPAY_KEY_ID": &c.RazorpayKeyID, "RAZORPAY_KEY_SECRET": &c.RazorpayKeySecret}
+	keys, ok := CredentialKeys(c.Gateway)
+	if !ok {
+		return nil, fmt.Errorf("GATEWAY must be payu or razorpay")
+	}
+	for _, key := range keys {
+		value := os.Getenv(key)
+		if value == "" {
+			return nil, fmt.Errorf("required env var %s is not set", key)
+		}
+		*fields[key] = value
+	}
 	return c, nil
 }
 
@@ -137,4 +151,12 @@ func envIntOr(key string, fallback int) int {
 		return fallback
 	}
 	return n
+}
+
+func CredentialKeys(name string) ([]string, bool) {
+	keys, ok := map[string][]string{
+		"payu":     {"GATEWAY_API_KEY", "PAYU_STATUS_URL"},
+		"razorpay": {"RAZORPAY_KEY_ID", "RAZORPAY_KEY_SECRET"},
+	}[name]
+	return keys, ok
 }

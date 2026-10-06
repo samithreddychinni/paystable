@@ -33,10 +33,12 @@ Required environment variables:
 | Variable | Purpose |
 |---|---|
 | `DATABASE_URL` | PostgreSQL connection string. |
-| `GATEWAY` | Current adapter, normally `payu`. |
+| `GATEWAY` | Active adapter: `payu` or `razorpay`. |
 | `WEBHOOK_SECRET` | Gateway webhook signing secret. For PayU this is the salt. |
 | `GATEWAY_API_KEY` | Gateway credential. For PayU this is the merchant key. |
-| `PAYU_STATUS_URL` | PayU status API endpoint. |
+| `PAYU_STATUS_URL` | PayU status API endpoint. Required for PayU. |
+| `RAZORPAY_KEY_ID` | Razorpay test key ID. Required for Razorpay. |
+| `RAZORPAY_KEY_SECRET` | Razorpay test key secret. Required for Razorpay. |
 | `MERCHANT_CALLBACK_SECRET` | Secret used to sign callbacks to your app. |
 | `ADMIN_API_KEY` | Bearer token for hold creation and backend reads. |
 
@@ -50,6 +52,10 @@ Useful optional variables:
 | `DELIVERY_TIMEOUT_S` | `10` | Merchant callback timeout. |
 | `DELIVERY_ALLOW_INSECURE_CALLBACK` | `false` | Allows `http://` callbacks in local dev only. |
 | `SECRET_ENCRYPTION_KEY` | empty | Required for encrypted webhook secret rotation. |
+
+Razorpay requires a source build and auto-capture.
+The v0.3.0 release binaries support PayU only.
+Read the [Razorpay guide](/guides/razorpay/) before you configure that adapter.
 
 ## Integration Flow
 
@@ -134,12 +140,12 @@ Paystable calls the hold `callback_url` when the hold reaches a final state:
 
 ```http
 POST <callback_url>
-X-Paystable-Signature: sha256=<hmac>
+X-Paystable-Signature: v2=<hmac>
 X-Paystable-Idempotency-Key: <opaque-key>
 X-Paystable-Timestamp: <unix-seconds>
 ```
 
-Always verify the signature and deduplicate by idempotency key before fulfilling.
+Verify the v2 signature over the timestamp, event key, and raw body before fulfilling. Reject timestamps more than five minutes from your current time. Deduplicate the authenticated key and apply fulfillment in one database transaction.
 
 See [Callback Contract](/reference/callbacks/) for the full payload and retry behavior.
 

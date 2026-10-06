@@ -141,3 +141,17 @@ func TestExplainDatabaseConnectionError_WrappedPQ(t *testing.T) {
 		t.Fatalf("output missing %q\nGot:\n%s", want, out)
 	}
 }
+
+func TestDoctorRazorpayAutoCapture(t *testing.T) {
+	t.Setenv("GATEWAY", "razorpay")
+	t.Setenv("RAZORPAY_KEY_ID", "rzp_test_key")
+	t.Setenv("RAZORPAY_KEY_SECRET", "test-key-secret")
+	t.Setenv("DATABASE_URL", "")
+	out := captureDoctorOutput(t, func() { _ = runDoctor(nil) })
+	if !strings.Contains(out, "Razorpay requires auto-capture") {
+		t.Fatal("missing capture requirement")
+	}
+	if strings.Contains(out, "test-key-secret") {
+		t.Fatal("doctor printed a credential")
+	}
+}

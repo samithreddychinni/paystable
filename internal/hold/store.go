@@ -48,8 +48,16 @@ func (s *Store) Create(txnID, gateway, callbackURL, currency string, amount int6
 
 	expiresAt := time.Now().Add(time.Duration(ttl) * time.Second)
 
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, txnID); err != nil {
+		return nil, err
+	}
 	h := &Hold{}
-	err = s.db.QueryRow(`
+	err = tx.QueryRow(`
 		INSERT INTO holds (txn_id, gateway, amount, currency, read_token, callback_url, ttl_seconds, expires_at, metadata)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		ON CONFLICT (txn_id) DO NOTHING
@@ -58,12 +66,22 @@ func (s *Store) Create(txnID, gateway, callbackURL, currency string, amount int6
 	).Scan(&h.ID, &h.TxnID, &h.Gateway, &h.Status, &h.Amount, &h.Currency, &h.ReadToken, &h.ExpiresAt, &h.CreatedAt, &h.UpdatedAt)
 
 	if err == sql.ErrNoRows {
+		if err := tx.Commit(); err != nil {
+			return nil, err
+		}
 		return s.getByTxnIDIfCreateMatches(txnID, gateway, callbackURL, currency, amount, ttl, metadata)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("insert hold: %w", err)
 	}
 
+	if _, err := tx.Exec(`INSERT INTO verification_polls (txn_id,attempt_number,scheduled_at,status)
+	 SELECT $1,1,now(),'pending' WHERE EXISTS (SELECT 1 FROM webhooks WHERE txn_id=$1 AND gateway=$2 AND actionable)`, txnID, gateway); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
 	return h, nil
 }
 

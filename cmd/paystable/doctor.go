@@ -68,17 +68,28 @@ func runDoctor(args []string) error {
 		okLine("generated secrets are set")
 	}
 
-	gatewayMissing := missingKeys(gatewayCredentialEnv)
+	gatewayName := os.Getenv("GATEWAY")
+	credentialKeys, supported := config.CredentialKeys(gatewayName)
+	if gatewayName == "" {
+		credentialKeys = gatewayCredentialEnv
+	} else if !supported {
+		failed = true
+		warnLine("GATEWAY must be payu or razorpay")
+	}
+	if gatewayName == "razorpay" {
+		infoLine("Razorpay requires auto-capture. Enable auto-capture in the Razorpay dashboard.")
+	}
+	gatewayMissing := missingKeys(credentialKeys)
 	if len(gatewayMissing) > 0 {
 		warnLine("missing gateway credentials: " + strings.Join(gatewayMissing, ", "))
-		infoLine("get these from your PayU dashboard and set them in .env")
+		infoLine("get these from the selected gateway dashboard and set them in .env")
 		infoLine("gateway gaps are warnings only — doctor continues")
 	} else {
 		okLine("gateway credentials are set")
 	}
 
 	if os.Getenv("GATEWAY") == "" {
-		warnLine("GATEWAY is not set (expected: payu)")
+		warnLine("GATEWAY is not set (expected: payu or razorpay)")
 		infoLine("edit .env and set GATEWAY=payu")
 	}
 
@@ -150,7 +161,7 @@ func runDoctor(args []string) error {
 
 	if len(gatewayMissing) > 0 {
 		okLine("database is ready")
-		infoLine("set PayU gateway credentials in .env, then start: ./paystable")
+		infoLine("set the selected gateway credentials in .env, then start: ./paystable")
 		return nil
 	}
 	okLine("paystable is ready to start")

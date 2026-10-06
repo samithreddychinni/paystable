@@ -9,7 +9,7 @@ Frontend polling and SSE are useful for display. They should not be the source o
 ```http
 POST <callback_url>
 Content-Type: application/json
-X-Paystable-Signature: sha256=<hex-hmac>
+X-Paystable-Signature: v2=<hex-hmac>
 X-Paystable-Idempotency-Key: <opaque-key>
 X-Paystable-Timestamp: <unix-seconds>
 ```
@@ -68,24 +68,40 @@ When an operator resolves a review as `confirmed` or `failed`, Paystable sends t
 
 ## Signature Verification
 
-Paystable signs the raw request body with HMAC-SHA256 using `MERCHANT_CALLBACK_SECRET`. The header value is hex encoded and prefixed with `sha256=`.
+Paystable uses HMAC-SHA256 with `MERCHANT_CALLBACK_SECRET`. The signature header is `v2=<lowercase-hex-hmac>`.
+The signed bytes are the UTF-8 prefix below followed immediately by the unchanged raw request body:
 
-Verify the raw bytes before JSON parsing:
+```text
+v2\n<timestamp>\n<idempotency-key>\n<raw-body>
+```
+
+Each `\n` represents one LF byte. Use the exact values from `X-Paystable-Timestamp` and `X-Paystable-Idempotency-Key`.
+The key must be nonempty and contain no CR or LF. The timestamp must be canonical decimal Unix seconds and within five minutes of the receiver's current time.
+Retries keep the same key and body but receive a fresh signed delivery timestamp.
+
+**Breaking change:** Update merchant verifiers when upgrading Paystable. Reject legacy body-only `sha256=` signatures; accepting them as a fallback permits header tampering.
+
+Verify the signature and timestamp before JSON parsing or trusting the event key:
 
 ```go
-func verify(body []byte, header, secret string) bool {
-	if !strings.HasPrefix(header, "sha256=") {
-		return false
-	}
-	got, err := hex.DecodeString(strings.TrimPrefix(header, "sha256="))
-	if err != nil {
-		return false
-	}
-	mac := hmac.New(sha256.New, []byte(secret))
-	_, _ = mac.Write(body)
-	return hmac.Equal(mac.Sum(nil), got)
+func verify(body []byte, signature, key, timestamp, secret string) bool {
+    if secret == "" || key == "" || strings.ContainsAny(key, "\r\n") {
+        return false
+    }
+    ts, err := strconv.ParseInt(timestamp, 10, 64)
+    now := time.Now().Unix()
+    if err != nil || strconv.FormatInt(ts, 10) != timestamp || ts < now-300 || ts > now+300 {
+        return false
+    }
+    mac := hmac.New(sha256.New, []byte(secret))
+    _, _ = mac.Write([]byte("v2\n" + timestamp + "\n" + key + "\n"))
+    _, _ = mac.Write(body)
+    expected := "v2=" + hex.EncodeToString(mac.Sum(nil))
+    return hmac.Equal([]byte(signature), []byte(expected))
 }
 ```
+
+Pass the raw body and all three callback header values to this verifier.
 
 ## Idempotency
 
@@ -94,7 +110,8 @@ Paystable delivers with at-least-once semantics. The same event may be sent more
 Rules for merchants:
 
 - Treat `X-Paystable-Idempotency-Key` as an opaque string.
-- Store it before taking irreversible action.
+- After signature verification, store the key and apply fulfillment in the same database transaction.
+- Enforce one fulfillment per `txn_id` with a database constraint as well as event-key deduplication.
 - If the key was already processed, return `2xx` and do nothing.
 - Never infer business meaning from the key format.
 
@@ -110,8 +127,8 @@ Respond within `DELIVERY_TIMEOUT_S` seconds. Default: 10.
 
 ## Security Checklist
 
-- Verify `X-Paystable-Signature` on the raw body.
-- Reject old timestamps if your app has replay protection.
+- Verify the v2 signature over the timestamp, event key, and raw body.
+- Reject signed timestamps more than five minutes in the past or future.
 - Deduplicate by `X-Paystable-Idempotency-Key`.
 - Return `2xx` only after your database transaction commits.
 - Use HTTPS callback URLs in production.

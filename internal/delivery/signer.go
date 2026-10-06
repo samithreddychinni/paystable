@@ -4,28 +4,30 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"strconv"
 	"strings"
+	"time"
 )
 
-// Sign computes HMAC-SHA256 over body and returns the value for
-// the X-Paystable-Signature header ("sha256=<hex>")
-func Sign(body []byte, secret string) string {
+// Sign authenticates the delivery timestamp, event key, and raw body.
+// The wire format is v2=<lowercase hex HMAC-SHA256>.
+func Sign(body []byte, idempotencyKey, timestamp, secret string) string {
 	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte("v2\n" + timestamp + "\n" + idempotencyKey + "\n"))
 	mac.Write(body)
-	return "sha256=" + hex.EncodeToString(mac.Sum(nil))
+	return "v2=" + hex.EncodeToString(mac.Sum(nil))
 }
 
-// Verify checks an X-Paystable-Signature header value against the body
-// exposed so merchant-side tooling can use the same logic
-func Verify(body []byte, header, secret string) bool {
-	if !strings.HasPrefix(header, "sha256=") {
+// Verify checks a v2 signature and permits at most five minutes of clock skew.
+// Merchants must still deduplicate the authenticated key before fulfillment.
+func Verify(body []byte, header, idempotencyKey, timestamp, secret string) bool {
+	if secret == "" || idempotencyKey == "" || strings.ContainsAny(idempotencyKey, "\r\n") {
 		return false
 	}
-	got, err := hex.DecodeString(strings.TrimPrefix(header, "sha256="))
-	if err != nil {
+	ts, err := strconv.ParseInt(timestamp, 10, 64)
+	now := time.Now().Unix()
+	if err != nil || strconv.FormatInt(ts, 10) != timestamp || ts < now-300 || ts > now+300 {
 		return false
 	}
-	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write(body)
-	return hmac.Equal(mac.Sum(nil), got)
+	return hmac.Equal([]byte(header), []byte(Sign(body, idempotencyKey, timestamp, secret)))
 }

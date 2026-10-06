@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"embed"
 	"fmt"
 	"log/slog"
@@ -14,6 +15,8 @@ import (
 
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
+
+const migrationLockID int64 = 0x706179737461626c
 
 // 1)Connect: establishes a connection to the PostgreSQL database using the provided URL
 func Connect(databaseURL string) (*sql.DB, error) {
@@ -29,7 +32,19 @@ func Connect(databaseURL string) (*sql.DB, error) {
 
 // 2)Migrate: ensures the schema_migrations table exists, reads migration files from the embedded filesystem, and used for executing all sql files
 func Migrate(db *sql.DB) error {
-	_, err := db.Exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("connect for migrations: %w", err)
+	}
+	defer conn.Close() //nolint:errcheck
+	// Close the session to release its lock and any failed transaction.
+	defer conn.Raw(func(any) error { return driver.ErrBadConn }) //nolint:errcheck
+	if _, err := conn.ExecContext(ctx, "SELECT pg_advisory_lock($1)", migrationLockID); err != nil {
+		return fmt.Errorf("lock migrations: %w", err)
+	}
+
+	_, err = conn.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (
 		version text PRIMARY KEY,
 		applied_at timestamptz NOT NULL DEFAULT now()
 	)`)
@@ -54,7 +69,7 @@ func Migrate(db *sql.DB) error {
 		version := strings.TrimSuffix(name, ".up.sql")
 
 		var exists bool
-		err := db.QueryRow("SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version = $1)", version).Scan(&exists)
+		err := conn.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version = $1)", version).Scan(&exists)
 		if err != nil {
 			return fmt.Errorf("check migration %s: %w", version, err)
 		}
@@ -67,11 +82,11 @@ func Migrate(db *sql.DB) error {
 			return fmt.Errorf("read migration %s: %w", name, err)
 		}
 
-		if _, err := db.Exec(string(content)); err != nil {
+		if _, err := conn.ExecContext(ctx, string(content)); err != nil {
 			return fmt.Errorf("apply migration %s: %w", name, err)
 		}
 
-		if _, err := db.Exec("INSERT INTO schema_migrations (version) VALUES ($1)", version); err != nil {
+		if _, err := conn.ExecContext(ctx, "INSERT INTO schema_migrations (version) VALUES ($1)", version); err != nil {
 			return fmt.Errorf("record migration %s: %w", version, err)
 		}
 
