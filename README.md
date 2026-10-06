@@ -284,7 +284,7 @@ Paystable sends final outcomes to the hold `callback_url`:
 ```http
 POST <callback_url>
 Content-Type: application/json
-X-Paystable-Signature: sha256=<hmac>
+X-Paystable-Signature: v2=<hmac>
 X-Paystable-Idempotency-Key: <opaque-key>
 X-Paystable-Timestamp: <unix-seconds>
 ```
@@ -305,8 +305,13 @@ X-Paystable-Timestamp: <unix-seconds>
 }
 ```
 
-Verify `X-Paystable-Signature` on the raw body before you decode JSON.
-Fulfill once for each verified `CONFIRMED` event.
+Verify the v2 signature over the delivery timestamp, idempotency key, and raw body before you decode JSON.
+Reject timestamps more than five minutes from your current time.
+Fulfill once for each verified `CONFIRMED` transaction, with deduplication and fulfillment in one database transaction.
+
+**Upgrade requirement:** Update your merchant verifier before upgrading Paystable.
+The v2 callback signature replaces the body-only `sha256=` format.
+See the [callback contract](docs/callback-contract.md) for the exact signed bytes and verifier.
 
 ---
 

@@ -140,12 +140,12 @@ Paystable calls the hold `callback_url` when the hold reaches a final state:
 
 ```http
 POST <callback_url>
-X-Paystable-Signature: sha256=<hmac>
+X-Paystable-Signature: v2=<hmac>
 X-Paystable-Idempotency-Key: <opaque-key>
 X-Paystable-Timestamp: <unix-seconds>
 ```
 
-Always verify the signature and deduplicate by idempotency key before fulfilling.
+Verify the v2 signature over the timestamp, event key, and raw body before fulfilling. Reject timestamps more than five minutes from your current time. Deduplicate the authenticated key and apply fulfillment in one database transaction.
 
 See [Callback Contract](/reference/callbacks/) for the full payload and retry behavior.
 

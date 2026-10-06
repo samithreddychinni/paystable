@@ -2,6 +2,9 @@
 
 ## unreleased
 
+- breaking: replace body-only callback signatures with `v2=` signatures that authenticate the delivery timestamp, event key, and raw body. Update merchant verifiers when upgrading; legacy signatures are rejected.
+- reject callback timestamps outside a five-minute clock-skew window and keep the event key stable across retries.
+
 ## v0.3.0 (2026-10-03)
 
 - add `paystable init` with generated secrets and private configuration permissions.

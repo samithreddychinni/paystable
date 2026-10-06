@@ -10,7 +10,7 @@ Paystable sends final outcomes to the hold `callback_url`. Treat this callback a
 ```http
 POST <callback_url>
 Content-Type: application/json
-X-Paystable-Signature: sha256=<hex-hmac>
+X-Paystable-Signature: v2=<hex-hmac>
 X-Paystable-Idempotency-Key: <opaque-key>
 X-Paystable-Timestamp: <unix-seconds>
 ```
@@ -43,17 +43,30 @@ Review states can include `reason`, `gateway_amount`, and `hold_amount`.
 
 ## Verify Signature
 
-The signature is HMAC-SHA256 over the raw request body using `MERCHANT_CALLBACK_SECRET`.
+The `v2=` signature authenticates the delivery timestamp, event key, and raw body with HMAC-SHA256 using `MERCHANT_CALLBACK_SECRET`.
+Sign the UTF-8 bytes `v2\n<timestamp>\n<idempotency-key>\n` followed by the unchanged raw body. Each `\n` is one LF byte.
+Reject timestamps more than five minutes in the past or future. Retries keep the same key and body and receive a fresh signed timestamp.
+
+**Breaking change:** Update your merchant verifier when upgrading Paystable. Reject legacy body-only `sha256=` signatures; do not accept them as a fallback.
 
 ```js
 import crypto from "node:crypto";
 
-export function verifyPaystableCallback(rawBody, header, secret) {
-  if (!header?.startsWith("sha256=")) return false;
+export function verifyPaystableCallback(rawBody, signature, key, timestamp, secret) {
+  if (!secret || !key || /[\r\n]/.test(key) ||
+      !/^(0|[1-9]\d*)$/.test(timestamp ?? "") ||
+      !/^v2=[0-9a-f]{64}$/.test(signature ?? "")) return false;
 
-  const received = Buffer.from(header.slice("sha256=".length), "hex");
+  const seconds = Number(timestamp);
+  const now = Math.floor(Date.now() / 1000);
+  if (!Number.isSafeInteger(seconds) || seconds < now - 300 || seconds > now + 300) {
+    return false;
+  }
+
+  const received = Buffer.from(signature.slice("v2=".length), "hex");
   const expected = crypto
     .createHmac("sha256", secret)
+    .update(`v2\n${timestamp}\n${key}\n`)
     .update(rawBody)
     .digest();
 
@@ -62,9 +75,11 @@ export function verifyPaystableCallback(rawBody, header, secret) {
 }
 ```
 
+Pass the unchanged raw body and the signature, idempotency key, and timestamp headers. Verify before JSON parsing or trusting the key.
+
 ## Idempotency
 
-Paystable delivers at least once. Store `X-Paystable-Idempotency-Key` before taking irreversible action. If the same key arrives again, return `2xx` and skip processing.
+Paystable delivers at least once. After signature verification, store `X-Paystable-Idempotency-Key` and apply fulfillment in the same database transaction. If the same key arrives again, return `2xx` and skip processing. Also enforce one fulfillment per `txn_id` with a database constraint.
 
 Treat the key as opaque.
 

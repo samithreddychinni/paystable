@@ -153,7 +153,7 @@ func deliver(ctx context.Context, db *sql.DB, cfg Config, row outboxRow) {
 	}
 
 	body := row.Payload
-	now := time.Now().UTC()
+	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
 
 	httpClient := &http.Client{
 		Timeout:   time.Duration(cfg.TimeoutS) * time.Second,
@@ -166,9 +166,9 @@ func deliver(ctx context.Context, db *sql.DB, cfg Config, row outboxRow) {
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Paystable-Signature", Sign(body, cfg.CallbackSecret))
+	req.Header.Set("X-Paystable-Signature", Sign(body, row.IdempotencyKey, timestamp, cfg.CallbackSecret))
 	req.Header.Set("X-Paystable-Idempotency-Key", row.IdempotencyKey)
-	req.Header.Set("X-Paystable-Timestamp", strconv.FormatInt(now.Unix(), 10))
+	req.Header.Set("X-Paystable-Timestamp", timestamp)
 
 	resp, err := httpClient.Do(req)
 	if err != nil {

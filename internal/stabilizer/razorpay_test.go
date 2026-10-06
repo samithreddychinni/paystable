@@ -263,7 +263,7 @@ func TestRazorpayWebhookBeforeHoldAndDuplicateCallback(t *testing.T) {
 	var callbacks atomic.Int32
 	merchant := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
-		if !delivery.Verify(body, r.Header.Get("X-Paystable-Signature"), "test-callback-secret") {
+		if !delivery.Verify(body, r.Header.Get("X-Paystable-Signature"), r.Header.Get("X-Paystable-Idempotency-Key"), r.Header.Get("X-Paystable-Timestamp"), "test-callback-secret") {
 			t.Error("callback signature invalid")
 		}
 		callbacks.Add(1)

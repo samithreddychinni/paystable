@@ -158,9 +158,9 @@ func TestDeliver_Permanent4xx_Exhausts(t *testing.T) {
 func TestDeliver_SignaturePresent(t *testing.T) {
 	db := openTestDB(t)
 
-	var gotSig string
+	var gotHeaders http.Header
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotSig = r.Header.Get("X-Paystable-Signature")
+		gotHeaders = r.Header.Clone()
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
@@ -179,8 +179,11 @@ func TestDeliver_SignaturePresent(t *testing.T) {
 
 	deliver(context.Background(), db, cfg, row)
 
-	if !Verify(row.Payload, gotSig, "mysecret") {
-		t.Errorf("signature verification failed, got %q", gotSig)
+	if gotHeaders.Get("X-Paystable-Idempotency-Key") != row.IdempotencyKey {
+		t.Fatal("callback event key changed")
+	}
+	if !Verify(row.Payload, gotHeaders.Get("X-Paystable-Signature"), gotHeaders.Get("X-Paystable-Idempotency-Key"), gotHeaders.Get("X-Paystable-Timestamp"), "mysecret") {
+		t.Errorf("signature verification failed, got %q", gotHeaders.Get("X-Paystable-Signature"))
 	}
 }
 
